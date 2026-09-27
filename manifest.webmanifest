@@ -1,0 +1,15 @@
+{
+  "name": "edubridge · конструктор",
+  "short_name": "edubridge",
+  "description": "Посты, Stories, Reels, обложки Telegram и YouTube по брендбуку edubridge",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F5F1",
+  "theme_color": "#0A34F5",
+  "lang": "ru",
+  "icons": [
+    { "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjExOCIgZmlsbD0iIzBBMzRGNSIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDc5LjUgMTgwKSBzY2FsZSgyLjIwNjMpIHRyYW5zbGF0ZSgtNDUyIC00MzQpIj48cGF0aCBkPSJNNTMyLjEyMSA0MzZDNTY3LjI3MyA0MzYgNTk3LjQ3IDQ1Ny40MDMgNjEwLjYyMSA0ODhINTgxLjI3N0M1NzAuNDg4IDQ3Mi4yODkgNTUyLjQ5NSA0NjIgNTMyLjEyMSA0NjJDNTExLjc0NyA0NjIgNDkzLjc1NCA0NzIuMjg5IDQ4Mi45NjUgNDg4SDQ1My42MjFDNDY2Ljc3MiA0NTcuNDAzIDQ5Ni45NyA0MzYgNTMyLjEyMSA0MzZaIiBmaWxsPSIjRkZGRkZGIi8+PC9nPjwvc3ZnPgo=", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzBBMzRGNSIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDExMS41IDE5Mikgc2NhbGUoMS44MDYzKSB0cmFuc2xhdGUoLTQ1MiAtNDM0KSI+PHBhdGggZD0iTTUzMi4xMjEgNDM2QzU2Ny4yNzMgNDM2IDU5Ny40NyA0NTcuNDAzIDYxMC42MjEgNDg4SDU4MS4yNzdDNTcwLjQ4OCA0NzIuMjg5IDU1Mi40OTUgNDYyIDUzMi4xMjEgNDYyQzUxMS43NDcgNDYyIDQ5My43NTQgNDcyLjI4OSA0ODIuOTY1IDQ4OEg0NTMuNjIxQzQ2Ni43NzIgNDU3LjQwMyA0OTYuOTcgNDM2IDUzMi4xMjEgNDM2WiIgZmlsbD0iI0ZGRkZGRiIvPjwvZz48L3N2Zz4K", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
