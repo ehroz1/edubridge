@@ -1,0 +1,15 @@
+{
+  "name": "edubridge · конструктор",
+  "short_name": "edubridge",
+  "description": "Посты, Stories, Reels, обложки Telegram и YouTube по брендбуку edubridge",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F5F1",
+  "theme_color": "#0A34F5",
+  "lang": "ru",
+  "icons": [
+    { "src": "__PWA_ICON__", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "__PWA_ICON_MASKABLE__", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

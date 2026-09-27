@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>edubridge · конструктор</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0A34F5">
+<link rel="icon" href="__FAVICON__">
+<link rel="apple-touch-icon" href="__APPLE_TOUCH_ICON__">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="edubridge">
+<script>
+// сохранённая тема применяется до отрисовки CSS, чтобы не мелькала не та тема
+try {
+  var t = localStorage.getItem('edubridge.theme.v1');
+  if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+} catch (e) { /* приватный режим — тема пойдёт по системной настройке */ }
+</script>
+<style>
+__FONT_FACES__
+__CSS__
+</style>
+</head>
+<body>
+
+<div class="install-banner" id="installBanner" hidden>
+  <span id="installBannerText"></span>
+  <button type="button" class="btn btn-primary btn-sm" id="installBannerAction">Установить</button>
+  <button type="button" class="icon-btn" id="installBannerClose" aria-label="Закрыть" data-icon="x"></button>
+</div>
+
+<!-- ============================================ экран выбора шаблона -->
+<main class="screen picker" id="picker" aria-label="Выбор шаблона">
+  <header class="picker-head">
+    <div class="brand">
+      <span class="brand-logo" id="brandLogo" aria-label="edubridge"></span>
+      <span class="brand-sub">конструктор материалов</span>
+    </div>
+    <div class="head-actions">
+      <button type="button" class="icon-btn" id="btnHelpPicker" title="Как пользоваться" data-icon="question"></button>
+      <button type="button" class="icon-btn" id="btnThemePicker" title="Тёмная тема" data-icon="moon"></button>
+    </div>
+  </header>
+
+  <section class="picker-intro">
+    <h1>Что делаем сегодня?</h1>
+    <p>Выбери шаблон — посмотри, из каких слайдов он состоит, и начни с готового примера или с чистого листа. Всё по брендбуку: цвета, шрифты и сетка уже на месте.</p>
+  </section>
+
+  <section class="drafts" id="draftsSection" hidden>
+    <div class="section-head">
+      <h2>Продолжить работу</h2>
+      <span class="muted">Черновики хранятся в этом браузере. Фото и видео нужно добавить заново.</span>
+    </div>
+    <div class="drafts-row" id="draftsRow"></div>
+  </section>
+
+  <nav class="filters" id="filters" aria-label="Фильтр по каналу"></nav>
+  <div class="gallery" id="gallery"></div>
+</main>
+
+<!-- ======================================== окно предпросмотра шаблона -->
+<div class="modal" id="tplModal" hidden>
+  <div class="modal-card tpl-card" role="dialog" aria-modal="true" aria-labelledby="tplTitle">
+    <button type="button" class="icon-btn modal-close" id="tplClose" aria-label="Закрыть" data-icon="x"></button>
+    <div class="tpl-preview">
+      <div class="tpl-stage"><canvas id="tplCanvas"></canvas></div>
+      <div class="tpl-strip" id="tplStrip"></div>
+    </div>
+    <div class="tpl-info">
+      <div class="chips" id="tplChips"></div>
+      <h2 id="tplTitle"></h2>
+      <p class="tpl-desc" id="tplDesc"></p>
+      <dl class="tpl-rules" id="tplRules"></dl>
+      <p class="tpl-kinds-label">Какие слайды можно добавить</p>
+      <div class="tpl-slides" id="tplSlides"></div>
+      <div class="tpl-actions">
+        <button type="button" class="btn btn-primary" id="tplUse">Начать с примером</button>
+        <button type="button" class="btn btn-outline" id="tplEmpty">Пустой шаблон</button>
+      </div>
+      <p class="muted small">← → — листать слайды, Enter — начать</p>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================= редактор -->
+<main class="screen editor" id="editor" hidden aria-label="Редактор">
+  <header class="topbar">
+    <button type="button" class="btn btn-ghost" id="btnBack" title="Все шаблоны"><span data-icon="arrow-left"></span><span class="hide-sm">Шаблоны</span></button>
+    <div class="doc-title">
+      <input type="text" id="docName" aria-label="Название материала" spellcheck="false">
+      <span class="chip" id="docFormat"></span>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="icon-btn" id="btnUndo" title="Отменить (⌘Z)" data-icon="arrow-counter-clockwise"></button>
+      <button type="button" class="icon-btn" id="btnRedo" title="Повторить (⌘⇧Z)" data-icon="arrow-clockwise"></button>
+      <button type="button" class="icon-btn" id="btnGuides" title="Сетка и безопасные зоны" data-icon="grid-four"></button>
+      <button type="button" class="icon-btn hide-sm" id="btnHelp" title="Как пользоваться" data-icon="question"></button>
+      <button type="button" class="icon-btn" id="btnTheme" title="Тёмная тема" data-icon="moon"></button>
+      <button type="button" class="btn btn-primary" id="btnExport"><span data-icon="download-simple"></span><span class="hide-sm">Экспорт</span></button>
+    </div>
+    <div class="export-pop" id="exportPop" hidden>
+      <p class="label">Формат</p>
+      <div class="seg" id="segFormat">
+        <button type="button" data-value="png">PNG</button>
+        <button type="button" data-value="jpeg">JPG</button>
+      </div>
+      <p class="label">Размер</p>
+      <div class="seg" id="segScale">
+        <button type="button" data-value="1">1×</button>
+        <button type="button" data-value="2">2×</button>
+      </div>
+      <p class="muted small" id="exportNote"></p>
+      <button type="button" class="btn btn-primary btn-block" id="btnExportZip">Все слайды · ZIP</button>
+      <button type="button" class="btn btn-outline btn-block" id="btnExportAll">Все слайды по одному</button>
+      <button type="button" class="btn btn-ghost btn-block" id="btnExportOne">Только текущий слайд</button>
+      <div class="progress" id="exportProgress" hidden><div id="exportProgressBar"></div></div>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="slides-panel" aria-label="Слайды">
+      <div class="slides-list" id="slidesList"></div>
+      <div class="add-slide">
+        <button type="button" class="btn btn-outline btn-block" id="btnAddSlide"><span data-icon="plus"></span>Слайд</button>
+        <div class="add-menu" id="addMenu" hidden></div>
+      </div>
+    </aside>
+
+    <section class="stage-panel" aria-label="Превью слайда">
+      <div class="stage" id="stage">
+        <div class="stage-inner" id="stageInner">
+          <canvas id="stageCanvas"></canvas>
+          <div class="stage-overlay" id="stageOverlay"></div>
+        </div>
+      </div>
+      <div class="stage-bar">
+        <div class="warnings" id="warnings"></div>
+        <div class="stage-nav">
+          <button type="button" class="icon-btn" id="btnPrev" title="Предыдущий слайд" data-icon="arrow-up"></button>
+          <span id="slideCounter"></span>
+          <button type="button" class="icon-btn" id="btnNext" title="Следующий слайд" data-icon="arrow-down"></button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="form-panel" aria-label="Содержимое слайда">
+      <div class="form-head">
+        <p class="eyebrow" id="formEyebrow"></p>
+        <h2 id="formTitle"></h2>
+      </div>
+      <div class="form" id="form"></div>
+      <div class="tune" id="tune"></div>
+    </aside>
+  </div>
+</main>
+
+<p class="status" id="status" role="status" aria-live="polite"></p>
+
+<input type="file" id="fileInput" accept="image/*,video/*" hidden>
+
+<!-- ===================================================== обрезка видео -->
+<div class="modal" id="videoTrimModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="videoTrimTitle">
+    <h2 id="videoTrimTitle">Обрезка видео</h2>
+    <p class="muted" id="videoTrimHint"></p>
+    <div id="videoTrimBody"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="videoTrimCancel">Отмена</button>
+      <button type="button" class="btn btn-primary" id="videoTrimConfirm">Готово</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================= справка -->
+<div class="modal" id="helpModal" hidden>
+  <div class="modal-card help-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <button type="button" class="icon-btn modal-close" id="helpClose" aria-label="Закрыть" data-icon="x"></button>
+    <h2 id="helpTitle">Как пользоваться</h2>
+    <div id="helpBody"></div>
+  </div>
+</div>
+
+<script>
+__ASSETS_JS__
+</script>
+<script>
+__RENDER_JS__
+</script>
+<script>
+__TEMPLATES_JS__
+</script>
+<script>
+__APP_JS__
+</script>
+</body>
+</html>
