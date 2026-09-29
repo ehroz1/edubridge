@@ -217,17 +217,25 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   const def = KINDS[slide.kind];
   const fmt = FORMATS[def.format];
   const media = opts.media ?? (state.media[slide.id] || {});
+  const collab = opts.collab !== undefined ? opts.collab : (state.draft ? state.draft.collab : null);
+  const partners = collabPartners(collab);
+  const monoLockup = partners.length > 0 && (!collab || collab.mono !== false);
+  const flags = (slide.data.flags || []).filter(c => FLAGS[c]).slice(0, 3);
   const warnings = [];
   const slots = [];
   const warn = msg => { if (!warnings.includes(msg)) warnings.push(msg); };
-  const fieldLabel = key => (def.fields.find(f => f.key === key) || {}).label || 'Фото';
+  const fieldLabel = key => (fieldForKey(def, key) || {}).label || 'Фото';
+  const mediaAt = key => (media[key] && media[key].el ? media[key] : null);
+  // при коллаборации по брендбуку оба логотипа в монохроме
+  const lockVariant = v => (monoLockup ? ({ main: 'monoInk', onDark: 'monoWhite' }[v] || v) : v);
   const env = {
-    W: fmt.w, H: fmt.h, index, total: slides.length,
+    W: fmt.w, H: fmt.h, index, total: slides.length, slides,
     ordinal: slides.slice(0, index).filter(s => s.kind === slide.kind).length,
     rubric: tpl ? tpl.rubric : null,
     exporting: Boolean(opts.exporting),
-    warnings, slots,
-    media: key => (media[key] && media[key].el ? media[key] : null),
+    warnings, slots, flags,
+    hasCollab: partners.length > 0,
+    media: mediaAt,
     t(role, st) {
       const tn = slide.tune && slide.tune[role];
       if (!tn) return st;
@@ -243,13 +251,53 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
     slot(key, x, y, w, h, o = {}) { slots.push({ key, x, y, w, h, opts: o }); },
     photo(key, x, y, w, h, o = {}) {
       slots.push({ key, x, y, w, h, opts: o });
-      const m = media[key] && media[key].el ? media[key] : null;
+      const m = mediaAt(key);
       drawMedia(ctx, m, x, y, w, h, o);
       if (m && o.fit !== 'contain') {
         const g = mediaGeometry(m, w, h, o.fit);
         const [iw] = mediaSize(m.el);
         if (g && iw && g.dw / iw > UPSCALE_WARN) warn(`${fieldLabel(key)}: мало пикселей, будет мыльно — нужен файл покрупнее`);
       }
+    },
+    /* Фото по желанию: рисуется, только если загружено. */
+    band(key, x, y, w, h, o = {}) {
+      if (!mediaAt(key)) return false;
+      env.photo(key, x, y, w, h, o);
+      return true;
+    },
+    /* Фото по желанию на весь кадр под тонировкой цветом фона — текст остаётся читаемым. */
+    bgPhoto(key, color, alpha) {
+      if (!mediaAt(key)) return false;
+      env.photo(key, 0, 0, fmt.w, fmt.h, {});
+      fillRect(ctx, 0, 0, fmt.w, fmt.h, rgba(color, alpha));
+      return true;
+    },
+    /* Логотип edubridge — с партнёрами из «Коллаборации», если они выбраны. */
+    logo(x, y, h, variant = 'main', align = 'left', maxW = Infinity) {
+      // не влезает в отведённую ширину — уменьшаем всю раскладку, центр строки сохраняем
+      const w = lockupLayout(h, partners, lockVariant(variant)).w;
+      const k = w > maxW ? Math.max(0.5, maxW / w) : 1;
+      const hh = h * k;
+      return drawLockup(ctx, x, y + (h - hh) * 0.6, hh, lockVariant(variant), partners, align);
+    },
+    logoWidth(h, variant = 'main') {
+      return lockupLayout(h, partners, lockVariant(variant)).w;
+    },
+    /* Для слайдов, где логотипа по брендбуку нет: раскладка появляется только при коллаборации. */
+    collab(x, y, h, variant = 'main', align = 'left', maxW = Infinity) {
+      return partners.length ? env.logo(x, y, h, variant, align, maxW) : 0;
+    },
+    pill(x, y, rubric, surface, o = {}) {
+      return drawRubric(ctx, x, y, rubric, surface, Object.assign({}, o, { flags: o.noFlags ? [] : flags }));
+    },
+    pillSize(rubric, surface, o = {}) {
+      return rubricWidth(ctx, rubric, surface, Object.assign({}, o, { flags: o.noFlags ? [] : flags }));
+    },
+    drawFlags(x, y, size, align = 'left', o = {}) {
+      if (!flags.length) return 0;
+      const w = flagsRowWidth(flags.length, size);
+      drawFlagsRow(ctx, flags, align === 'right' ? x - w : x, y, size, o);
+      return w;
     },
   };
   ctx.save();
@@ -261,6 +309,15 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   }
   ctx.restore();
   return { warnings, slots, W: fmt.w, H: fmt.h };
+}
+
+/* Поле формы по ключу медиа: «photo» или вложенное «items.0.logo» — поле внутри списка. */
+function fieldForKey(def, key) {
+  if (!key.includes('.')) return def.fields.find(f => f.key === key) || null;
+  const [listKey, idx, subKey] = key.split('.');
+  const list = def.fields.find(f => f.key === listKey);
+  const sub = list && list.item && list.item.find(x => x.key === subKey);
+  return sub ? Object.assign({}, sub, { label: `${sub.label} ${Number(idx) + 1}` }) : null;
 }
 
 /* Рисует слайд в canvas шириной cssW (CSS-пиксели) с учётом плотности экрана. */
@@ -338,6 +395,96 @@ function drawGuides(ctx, slide) {
     ctx.strokeRect(96, 54, W - 192, H - 108);
   }
   ctx.restore();
+}
+
+/* ====================================================== логотипы партнёров */
+/*
+ * Библиотека для ко-брендинга: логотипы группы WE media из
+ * wemedia-group-branding (PARTNER_LOGOS, вшиты в сборку) и логотипы, которые
+ * пользователь загрузил сам (edubridge.logos.v1 в localStorage — data URL,
+ * растр ужат до 800 px, чтобы уложиться в лимит хранилища). Выбранные для
+ * материала логотипы — в draft.collab.ids, по брендбуку не больше трёх.
+ */
+const STORE_LOGOS = 'edubridge.logos.v1';
+const COLLAB_MAX = 3;
+const LOGOS = new Map();   // id → { id, name, url, img, lib }
+
+function loadImage(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function userLogos() {
+  const list = storeGet(STORE_LOGOS, []);
+  return Array.isArray(list) ? list.filter(l => l && l.id && l.url) : [];
+}
+
+async function registerLogo(entry, lib) {
+  const img = await loadImage(entry.url);
+  if (img) LOGOS.set(entry.id, { id: entry.id, name: entry.name, url: entry.url, img, lib });
+}
+
+function loadLogos() {
+  return Promise.all([
+    ...PARTNER_LOGOS.map(l => registerLogo(l, true)),
+    ...userLogos().map(l => registerLogo(l, false)),
+  ]);
+}
+
+/* Партнёры материала для отрисовки. Логотипы из библиотеки чёрные — их всегда перекрашиваем под фон. */
+function collabPartners(collab) {
+  if (!collab || !Array.isArray(collab.ids)) return [];
+  const mono = collab.mono !== false;
+  return collab.ids.map(id => LOGOS.get(id)).filter(Boolean).slice(0, COLLAB_MAX)
+    .map(logo => ({ logo, mono: logo.lib || mono }));
+}
+
+/* Файл логотипа → data URL: SVG как есть (если небольшой), растр — ужатый PNG с прозрачностью. */
+function logoFileToUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('не удалось прочитать файл'));
+    reader.onload = async () => {
+      const url = reader.result;
+      if (/svg/.test(file.type) && url.length < 400000) { resolve(url); return; }
+      const img = await loadImage(url);
+      if (!img) { reject(new Error('это не картинка')); return; }
+      const k = Math.min(1, 800 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round((img.naturalWidth || 800) * k));
+      c.height = Math.max(1, Math.round((img.naturalHeight || 800) * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/png'));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadLogo(file) {
+  try {
+    const url = await logoFileToUrl(file);
+    const entry = { id: 'up:' + uid(), name: file.name.replace(/\.[a-z0-9]+$/i, '') || 'Мой логотип', url };
+    const list = userLogos();
+    list.unshift(entry);
+    if (!storeSet(STORE_LOGOS, list)) {
+      say('Логотип добавлен, но в памяти браузера нет места — после перезагрузки его придётся загрузить снова');
+    }
+    await registerLogo(entry, false);
+    return entry.id;
+  } catch (err) {
+    say('Не получилось добавить логотип: ' + err.message);
+    return null;
+  }
+}
+
+function deleteUserLogo(id) {
+  storeSet(STORE_LOGOS, userLogos().filter(l => l.id !== id));
+  LOGOS.delete(id);
+  if (state.draft) state.draft.collab.ids = state.draft.collab.ids.filter(x => x !== id);
 }
 
 /* ============================================================ выбор шаблона */
@@ -425,7 +572,7 @@ function paintTiles(tiles = [...el.gallery.querySelectorAll('.tpl-tile')]) {
     const slides = previewSlides(tpl);
     const pad = slides.length > 1 ? 40 : 28;
     const w = fitWidth(slides[0], well.clientWidth - pad, well.clientHeight - pad);
-    paintCanvas(tile.querySelector('canvas'), slides[0], 0, slides, tpl, w, { media: {} });
+    paintCanvas(tile.querySelector('canvas'), slides[0], 0, slides, tpl, w, { media: {}, collab: null });
     tile.querySelectorAll('.behind').forEach(b => { b.style.width = w + 'px'; });
   }
 }
@@ -471,6 +618,7 @@ function openTemplate(id) {
     el.tplStrip.appendChild(b);
   });
   el.tplStrip.hidden = state.preview.slides.length < 2;
+  el.tplFromText.hidden = !tpl.importer;
   el.tplModal.hidden = false;
   paintTemplatePreview(true);
   el.tplUse.focus();
@@ -484,12 +632,12 @@ function paintTemplatePreview(withStrip = false) {
   const cs = getComputedStyle(box);
   const bw = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const bh = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  paintCanvas(el.tplCanvas, slide, p.index, p.slides, p.tpl, fitWidth(slide, bw, bh), { media: {} });
+  paintCanvas(el.tplCanvas, slide, p.index, p.slides, p.tpl, fitWidth(slide, bw, bh), { media: {}, collab: null });
   [...el.tplStrip.children].forEach((b, i) => {
     b.classList.toggle('on', i === p.index);
     if (withStrip) {
       const s = p.slides[i];
-      paintCanvas(b.querySelector('canvas'), s, i, p.slides, p.tpl, fitWidth(s, 120, 84), { media: {} });
+      paintCanvas(b.querySelector('canvas'), s, i, p.slides, p.tpl, fitWidth(s, 120, 84), { media: {}, collab: null });
     }
   });
   const active = el.tplStrip.children[p.index];
@@ -518,12 +666,20 @@ function normalizeDraft(d) {
     name: d.name || templateById(d.templateId).name,
     mode: d.mode || 'sample',
     updatedAt: d.updatedAt || Date.now(),
+    collab: normalizeCollab(d.collab),
     slides: d.slides.map(s => ({
       id: s.id || uid(),
       kind: s.kind,
       data: Object.assign(emptyData(s.kind), s.data || {}),
       tune: s.tune || {},
     })),
+  };
+}
+
+function normalizeCollab(c) {
+  return {
+    ids: c && Array.isArray(c.ids) ? c.ids.filter(id => typeof id === 'string').slice(0, COLLAB_MAX) : [],
+    mono: !c || c.mono !== false,
   };
 }
 
@@ -576,7 +732,7 @@ function buildDrafts() {
     card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     el.draftsRow.appendChild(card);
     if (state.fontsReady) {
-      paintCanvas(card.querySelector('canvas'), d.slides[0], 0, d.slides, tpl, fitWidth(d.slides[0], 176, 150), { media: {} });
+      paintCanvas(card.querySelector('canvas'), d.slides[0], 0, d.slides, tpl, fitWidth(d.slides[0], 176, 150), { media: {}, collab: d.collab });
     }
   }
 }
@@ -587,6 +743,7 @@ function startDraft(tpl, mode) {
   const draft = {
     id: uid(), templateId: tpl.id, name: tpl.name, mode,
     updatedAt: Date.now(), slides: buildSlidesFrom(tpl, mode),
+    collab: normalizeCollab(null),
   };
   closeTemplate();
   openEditor(draft, { fresh: true });
@@ -610,8 +767,11 @@ function openEditor(draft, opts = {}) {
   el.docName.value = draft.name;
   const fmt = FORMATS[KINDS[draft.slides[0].kind].format];
   el.docFormat.textContent = `${templateOf(draft).name} · ${fmt.label}`;
+  state.collabOpen = false;
   buildSlidesList();
   buildForm();
+  buildCollab();
+  el.importCallout.hidden = !templateOf(draft).importer;
   requestAnimationFrame(() => { renderStage(); paintThumbs(); });
   window.scrollTo(0, 0);
   if (opts.restored) say('Черновик открыт. Фото и видео не сохраняются между сессиями — добавь их заново');
@@ -823,7 +983,7 @@ function buildAddMenu() {
     b.addEventListener('click', () => insertSlide(kind));
     el.addMenu.appendChild(b);
     const s = { id: 'menu', kind, data: sampleData(kind), tune: {} };
-    paintCanvas(c, s, 0, [s], tpl, 44, { media: {} });
+    paintCanvas(c, s, 0, [s], tpl, 44, { media: {}, collab: null });
   }
 }
 
@@ -857,7 +1017,7 @@ function updateOverlay() {
   for (const s of st.slots) {
     if (seen.has(s.key)) continue;
     seen.add(s.key);
-    const field = def.fields.find(f => f.key === s.key);
+    const field = fieldForKey(def, s.key);
     if (!field) continue;
     const m = mediaOf(slide.id, s.key);
     const cx = (s.x + s.w / 2) * st.k;
@@ -1106,8 +1266,19 @@ function buildForm() {
   el.formEyebrow.textContent = `Слайд ${state.current + 1} из ${n} · ${FORMATS[def.format].label}`;
   el.formTitle.textContent = def.name;
   el.form.innerHTML = '';
-  for (const f of def.fields) el.form.appendChild(fieldNode(slide, f));
+  for (const f of def.fields) {
+    if (f.showIf && !f.showIf(slide.data)) continue;
+    el.form.appendChild(fieldNode(slide, f));
+  }
   buildTune();
+}
+
+/* Пересобирает форму, не теряя прокрутку — когда выбор меняет набор полей (число спикеров). */
+function rebuildFormKeepScroll() {
+  const panel = el.form.parentElement;
+  const top = panel.scrollTop;
+  buildForm();
+  panel.scrollTop = top;
 }
 
 function fieldWrap(f, labelFor) {
@@ -1190,7 +1361,12 @@ function fieldNode(slide, f) {
         const sel = document.createElement('select');
         sel.id = id;
         for (const [value, name] of f.options) sel.add(new Option(name, value, false, d[f.key] === value));
-        sel.addEventListener('change', () => { pushUndo(); d[f.key] = sel.value; changed(); });
+        sel.addEventListener('change', () => {
+          pushUndo();
+          d[f.key] = sel.value;
+          if (f.rebuild) rebuildFormKeepScroll();
+          changed();
+        });
         wrap.appendChild(sel);
       }
       addHint(wrap, f.hint);
@@ -1225,6 +1401,41 @@ function fieldNode(slide, f) {
       sel.addEventListener('change', () => { pushUndo(); d[f.key] = sel.value; sync(); changed(); });
       sync();
       row.append(img, sel);
+      wrap.appendChild(row);
+      addHint(wrap, f.hint);
+      break;
+    }
+    case 'flags': {
+      wrap = fieldWrap(f, id);
+      const list = Array.isArray(d[f.key]) ? d[f.key] : (d[f.key] = []);
+      const row = document.createElement('div');
+      row.className = 'flag-chips';
+      const names = Object.fromEntries(COUNTRIES);
+      const rebuild = () => { wrap.replaceWith(fieldNode(slide, f)); changed(); };
+      list.forEach((code, i) => {
+        const chip = document.createElement('span');
+        chip.className = 'flag-chip';
+        chip.innerHTML = `<img src="${FLAGS[code] || ''}" alt="">`;
+        chip.appendChild(document.createTextNode(names[code] || code));
+        const x = btn('x', 'Убрать флаг', 'icon-btn sm');
+        x.addEventListener('click', () => { pushUndo(); list.splice(i, 1); rebuild(); });
+        chip.appendChild(x);
+        row.appendChild(chip);
+      });
+      if (list.length < (f.max || 3)) {
+        const sel = document.createElement('select');
+        sel.id = id;
+        sel.className = 'flag-add';
+        sel.add(new Option(list.length ? '+ Ещё страна' : '+ Добавить страну', ''));
+        for (const [code, name] of COUNTRIES) if (!list.includes(code)) sel.add(new Option(name, code));
+        sel.addEventListener('change', () => {
+          if (!sel.value) return;
+          pushUndo();
+          list.push(sel.value);
+          rebuild();
+        });
+        row.appendChild(sel);
+      }
       wrap.appendChild(row);
       addHint(wrap, f.hint);
       break;
@@ -1393,6 +1604,10 @@ function listField(slide, f) {
     cells.className = 'cells' + (inline ? ' inline' : '');
     if (inline) cells.style.setProperty('--cols', texts.length);
     for (const sub of f.item) {
+      if (sub.type === 'media') {
+        cells.appendChild(listMediaCell(slide, `${f.key}.${i}.${sub.key}`, sub));
+        continue;
+      }
       if (sub.type === 'toggle') {
         const label = document.createElement('label');
         label.className = 'toggle';
@@ -1417,9 +1632,28 @@ function listField(slide, f) {
     bUp.disabled = i === 0;
     bDown.disabled = i === rows.length - 1;
     bDel.disabled = rows.length <= (f.min || 0);
-    bUp.addEventListener('click', () => { pushUndo(); rows.splice(i - 1, 0, rows.splice(i, 1)[0]); rebuild(); });
-    bDown.addEventListener('click', () => { pushUndo(); rows.splice(i + 1, 0, rows.splice(i, 1)[0]); rebuild(); });
-    bDel.addEventListener('click', () => { pushUndo(); rows.splice(i, 1); rebuild(); });
+    const order = () => rows.map((_, k) => k);
+    bUp.addEventListener('click', () => {
+      pushUndo();
+      const o = order(); o.splice(i - 1, 0, o.splice(i, 1)[0]);
+      rows.splice(i - 1, 0, rows.splice(i, 1)[0]);
+      remapListMedia(slide.id, f.key, o);
+      rebuild();
+    });
+    bDown.addEventListener('click', () => {
+      pushUndo();
+      const o = order(); o.splice(i + 1, 0, o.splice(i, 1)[0]);
+      rows.splice(i + 1, 0, rows.splice(i, 1)[0]);
+      remapListMedia(slide.id, f.key, o);
+      rebuild();
+    });
+    bDel.addEventListener('click', () => {
+      pushUndo();
+      const o = order(); o.splice(i, 1);
+      rows.splice(i, 1);
+      remapListMedia(slide.id, f.key, o);
+      rebuild();
+    });
     if ((f.max || 99) > 1 && (f.min || 0) !== f.max) tools.append(bUp, bDown, bDel);
     else tools.append(bUp, bDown);
     r.append(cells, tools);
@@ -1436,7 +1670,7 @@ function listField(slide, f) {
     add.addEventListener('click', () => {
       pushUndo();
       const item = {};
-      for (const sub of f.item) item[sub.key] = sub.type === 'toggle' ? false : '';
+      for (const sub of f.item) if (sub.type !== 'media') item[sub.key] = sub.type === 'toggle' ? false : '';
       rows.push(item);
       rebuild();
       requestAnimationFrame(() => {
@@ -1447,6 +1681,184 @@ function listField(slide, f) {
     wrap.appendChild(add);
   }
   return wrap;
+}
+
+/* Кнопка-миниатюра для фото внутри строки списка (логотип приложения в подборке). */
+function listMediaCell(slide, key, sub) {
+  const box = document.createElement('div');
+  box.className = 'list-media';
+  const m = mediaOf(slide.id, key);
+  const pick = document.createElement('button');
+  pick.type = 'button';
+  pick.className = 'lm-thumb';
+  pick.title = m ? 'Заменить' : `${sub.label}: загрузить`;
+  if (m && !m.isVideo) pick.innerHTML = `<img src="${m.el.src}" alt="">`;
+  else pick.innerHTML = iconSvg('image');
+  pick.addEventListener('click', () => pickFile(slide.id, key));
+  box.appendChild(pick);
+  const label = document.createElement('span');
+  label.className = 'lm-label';
+  label.textContent = m ? sub.label : `${sub.label} — по желанию`;
+  box.appendChild(label);
+  if (m) {
+    const rm = btn('x', 'Убрать', 'icon-btn sm');
+    rm.addEventListener('click', () => removeMedia(slide.id, key));
+    box.appendChild(rm);
+  }
+  box.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  box.addEventListener('drop', e => {
+    const file = [...e.dataTransfer.files].find(isMediaFile);
+    if (!file) return;
+    e.preventDefault();
+    setMedia(slide.id, key, file);
+  });
+  return box;
+}
+
+/* Фото строк списка привязаны к номеру строки — при перестановке и удалении переносим их вслед за строками. */
+function remapListMedia(slideId, listKey, order) {
+  const byKey = state.media[slideId];
+  if (!byKey) return;
+  const moved = {};
+  for (const [k, m] of Object.entries(byKey)) {
+    const parts = k.split('.');
+    if (parts.length === 3 && parts[0] === listKey) { moved[k] = m; delete byKey[k]; }
+  }
+  order.forEach((oldIdx, newIdx) => {
+    for (const [k, m] of Object.entries(moved)) {
+      const [, i, sub] = k.split('.');
+      if (Number(i) === oldIdx) byKey[`${listKey}.${newIdx}.${sub}`] = m;
+    }
+  });
+}
+
+/* --------------------------------------------------------- коллаборация */
+
+function logoTileImg(logo) {
+  return `<img src="${logo.url}" alt="">`;
+}
+
+function toggleCollab(id) {
+  const c = state.draft.collab;
+  const has = c.ids.includes(id);
+  if (!has && c.ids.length >= COLLAB_MAX) { say(`По брендбуку — не больше ${COLLAB_MAX} партнёров рядом с логотипом`); return; }
+  pushUndo();
+  c.ids = has ? c.ids.filter(x => x !== id) : c.ids.concat(id);
+  buildCollab();
+  changed();
+}
+
+function buildCollab() {
+  if (!state.draft) return;
+  const c = state.draft.collab;
+  el.collab.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'collab-head';
+  head.innerHTML = `${iconSvg('handshake')}<div><b>Коллаборация</b><span>Логотипы партнёров встанут рядом с логотипом edubridge на всех слайдах</span></div>`;
+  el.collab.appendChild(head);
+
+  const chips = document.createElement('div');
+  chips.className = 'logo-chips';
+  for (const id of c.ids) {
+    const logo = LOGOS.get(id);
+    if (!logo) continue;
+    const chip = document.createElement('span');
+    chip.className = 'logo-chip';
+    chip.innerHTML = `<span class="lc-img">${logoTileImg(logo)}</span>`;
+    chip.appendChild(document.createTextNode(logo.name));
+    const x = btn('x', 'Убрать партнёра', 'icon-btn sm');
+    x.addEventListener('click', () => toggleCollab(id));
+    chip.appendChild(x);
+    chips.appendChild(chip);
+  }
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'btn btn-outline btn-sm';
+  add.innerHTML = iconSvg(state.collabOpen ? 'caret-up' : 'plus') + `<span>${state.collabOpen ? 'Свернуть' : (c.ids.length ? 'Партнёры' : 'Добавить партнёра')}</span>`;
+  add.addEventListener('click', () => { state.collabOpen = !state.collabOpen; buildCollab(); });
+  chips.appendChild(add);
+  el.collab.appendChild(chips);
+
+  if (state.collabOpen) {
+    const grid = document.createElement('div');
+    grid.className = 'logo-grid';
+    for (const logo of LOGOS.values()) {
+      const t = document.createElement('div');
+      t.className = 'logo-tile' + (c.ids.includes(logo.id) ? ' on' : '');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.title = logo.name;
+      b.innerHTML = `<span class="lt-img">${logoTileImg(logo)}</span><span class="lt-name"></span>`;
+      b.querySelector('.lt-name').textContent = logo.name;
+      b.addEventListener('click', () => toggleCollab(logo.id));
+      t.appendChild(b);
+      if (!logo.lib) {
+        const del = btn('trash', 'Удалить из библиотеки', 'icon-btn sm lt-del');
+        del.addEventListener('click', () => {
+          if (!confirm(`Удалить логотип «${logo.name}» из библиотеки?`)) return;
+          pushUndo();
+          deleteUserLogo(logo.id);
+          buildCollab();
+          changed();
+        });
+        t.appendChild(del);
+      }
+      grid.appendChild(t);
+    }
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'logo-tile upload';
+    up.innerHTML = `${iconSvg('upload-simple')}<span class="lt-name">Загрузить свой</span>`;
+    up.title = 'PNG или SVG на прозрачном фоне';
+    up.addEventListener('click', () => { el.logoInput.value = ''; el.logoInput.click(); });
+    grid.appendChild(up);
+    el.collab.appendChild(grid);
+    const note = document.createElement('p');
+    note.className = 'hint';
+    note.textContent = 'Свои логотипы — PNG или SVG на прозрачном фоне. Они сохраняются в этом браузере и доступны во всех материалах.';
+    el.collab.appendChild(note);
+  }
+
+  if (c.ids.length) {
+    const label = document.createElement('label');
+    label.className = 'toggle';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = c.mono !== false;
+    cb.addEventListener('change', () => { pushUndo(); c.mono = cb.checked; changed(); });
+    label.append(cb, document.createTextNode('Оба логотипа в монохроме — по брендбуку'));
+    el.collab.appendChild(label);
+  }
+}
+
+/* ------------------------------------------------ текст поста → слайды */
+
+function openImport() {
+  const tpl = state.draft && templateOf(state.draft);
+  if (!tpl || !tpl.importer) return;
+  el.importHint.textContent = tpl.importHint || '';
+  el.importText.value = '';
+  el.importModal.hidden = false;
+  el.importText.focus();
+}
+
+function doImport() {
+  const tpl = templateOf(state.draft);
+  const specs = tpl.importer(el.importText.value);
+  if (!specs || specs.filter(s => s.kind === 'resGroup').length < 1) {
+    say('Не нашёл ни одного пункта «Название — описание». Проверь, что пункты отделены тире');
+    return;
+  }
+  pushUndo();
+  stopAllPreviews();
+  state.draft.slides = specs.map(sp => ({ id: uid(), kind: sp.kind, data: sampleData(sp.kind, sp.data), tune: {} }));
+  state.media = {};
+  state.current = 0;
+  el.importModal.hidden = true;
+  buildSlidesList();
+  buildForm();
+  changed();
+  say(`Готово: ${slideCountText(state.draft.slides.length)}. Проверь категории и добавь логотипы приложений, если нужно`);
 }
 
 /* ------------------------------------------------------ подстройка кегля */
@@ -1576,7 +1988,7 @@ function cloneVideo(src) {
 
 function pickFile(slideId, key) {
   const slide = state.draft.slides.find(s => s.id === slideId);
-  const field = KINDS[slide.kind].fields.find(f => f.key === key);
+  const field = fieldForKey(KINDS[slide.kind], key);
   state.pendingFile = { slideId, key };
   el.fileInput.accept = field && field.video ? 'image/*,video/*' : 'image/*';
   el.fileInput.value = '';
@@ -1586,7 +1998,7 @@ function pickFile(slideId, key) {
 async function setMedia(slideId, key, file) {
   const slide = state.draft && state.draft.slides.find(s => s.id === slideId);
   if (!slide) return;
-  const field = KINDS[slide.kind].fields.find(f => f.key === key);
+  const field = fieldForKey(KINDS[slide.kind], key) || {};
   const isVideo = isVideoFile(file);
   if (isVideo && !(field && field.video)) { say('Сюда можно только фото'); return; }
   try {
@@ -1698,7 +2110,7 @@ async function trimMedia(slideId, key) {
   if (!m || !m.isVideo) return;
   stopVideosOf(slideId);
   const slide = state.draft.slides.find(s => s.id === slideId);
-  const field = KINDS[slide.kind].fields.find(f => f.key === key);
+  const field = fieldForKey(KINDS[slide.kind], key) || {};
   const before = { s: m.el.trimStart, e: m.el.trimEnd };
   const ok = await askVideoTrim(m.el, { label: field.label });
   if (ok && (before.s !== m.el.trimStart || before.e !== m.el.trimEnd)) say('Фрагмент видео обновлён');
@@ -1850,7 +2262,7 @@ function snapshot() {
     media[sid] = {};
     for (const [k, m] of Object.entries(byKey)) media[sid][k] = Object.assign({}, m);
   }
-  return { slides: clone(state.draft.slides), media, current: state.current, name: state.draft.name };
+  return { slides: clone(state.draft.slides), media, current: state.current, name: state.draft.name, collab: clone(state.draft.collab) };
 }
 
 /* tag — для склейки серии одинаковых правок (набор текста, ползунок) в один шаг. */
@@ -1872,7 +2284,9 @@ function restore(snap) {
   state.media = snap.media;
   state.current = clamp(snap.current, 0, snap.slides.length - 1);
   state.draft.name = snap.name;
+  state.draft.collab = snap.collab || normalizeCollab(null);
   el.docName.value = snap.name;
+  buildCollab();
   state.focusMedia = null;
   lastUndoTag = null;
   buildSlidesList();
@@ -2232,15 +2646,22 @@ const HELP = `
 <li>Перетащи файл прямо на рамку на превью, нажми на пустую рамку или на кнопку «Загрузить». <kbd>⌘V</kbd> вставляет картинку из буфера.</li>
 <li>Кадр двигается перетаскиванием, масштаб — колесом мыши, щипком или ползунком.</li>
 <li>Видео можно поставить на обложки, Reels и титры: после загрузки откроется обрезка. Экспорт — MP4 (или WEBM, если браузер не умеет MP4), со звуком.</li>
+<li>На слайдах без обязательного фото есть поле <b>«Фото — по желанию»</b>: пустое — слайд выглядит как в брендбуке, с фото — появится полоса или фон под тонировкой.</li>
 <li>Фото и видео не сохраняются между сессиями — только тексты.</li>
 </ul>
-<h3>4. Если текст не влезает</h3>
+<h3>4. Коллаборации и флаги</h3>
+<ul>
+<li>Блок <b>Коллаборация</b> над формой: до 3 логотипов партнёров — из библиотеки WE media group или свои (PNG/SVG на прозрачном фоне). Они встают рядом с логотипом edubridge через разделитель на всех слайдах.</li>
+<li>По брендбуку оба логотипа в монохроме — галочка «Оба логотипа в монохроме» включена по умолчанию.</li>
+<li>Поле <b>«Флаги — по желанию»</b> есть в каждом шаблоне: до 3 стран, флаги встают в плашку рубрики или в свободный угол.</li>
+</ul>
+<h3>5. Если текст не влезает</h3>
 <ul>
 <li>Под превью появится предупреждение: «больше 3 строк», «не помещается», «мало пикселей».</li>
 <li>В блоке <b>Подстройка текста</b> можно уменьшить кегль и интерлиньяж, кнопка <b>Уместить</b> сделает это сама.</li>
 <li>Кнопка с сеткой в верхней панели показывает поля, колонки и безопасные зоны: обрезку 3:4 в профиле, зоны интерфейса Stories, зону обложки Reels.</li>
 </ul>
-<h3>5. Экспорт</h3>
+<h3>6. Экспорт</h3>
 <ul>
 <li><b>Экспорт</b> справа сверху: PNG или JPG, 1× или 2×, все слайды одним ZIP, по одному или только текущий. <kbd>⌘S</kbd> — все слайды.</li>
 <li>Титры для Reels и плашка спикера без фона выгружаются в PNG с прозрачностью — для монтажа.</li>
@@ -2271,6 +2692,7 @@ function collectElements() {
 function closeTopModal() {
   if (!el.videoTrimModal.hidden) { el.videoTrimCancel.click(); return true; }
   if (!el.helpModal.hidden) { el.helpModal.hidden = true; return true; }
+  if (!el.importModal.hidden) { el.importModal.hidden = true; return true; }
   if (!el.tplModal.hidden) { closeTemplate(); return true; }
   if (!el.exportPop.hidden) { el.exportPop.hidden = true; return true; }
   if (!el.addMenu.hidden) { el.addMenu.hidden = true; return true; }
@@ -2283,6 +2705,25 @@ function wireEvents() {
   el.tplModal.addEventListener('click', e => { if (e.target === el.tplModal) closeTemplate(); });
   el.tplUse.addEventListener('click', () => startDraft(state.preview.tpl, 'sample'));
   el.tplEmpty.addEventListener('click', () => startDraft(state.preview.tpl, 'empty'));
+  el.tplFromText.addEventListener('click', () => { startDraft(state.preview.tpl, 'sample'); openImport(); });
+  el.btnImport.addEventListener('click', openImport);
+  el.importCancel.addEventListener('click', () => { el.importModal.hidden = true; });
+  el.importClose.addEventListener('click', () => { el.importModal.hidden = true; });
+  el.importModal.addEventListener('click', e => { if (e.target === el.importModal) el.importModal.hidden = true; });
+  el.importConfirm.addEventListener('click', doImport);
+  el.logoInput.addEventListener('change', async () => {
+    const file = el.logoInput.files[0];
+    if (!file || !state.draft) return;
+    const id = await uploadLogo(file);
+    if (!id) return;
+    if (state.draft.collab.ids.length < COLLAB_MAX) {
+      pushUndo();
+      state.draft.collab.ids.push(id);
+    }
+    buildCollab();
+    changed();
+    say('Логотип добавлен в библиотеку');
+  });
   el.btnHelpPicker.addEventListener('click', openHelp);
   el.btnThemePicker.addEventListener('click', toggleTheme);
   el.helpClose.addEventListener('click', () => { el.helpModal.hidden = true; });
@@ -2417,7 +2858,7 @@ async function start() {
   buildGallery();
   buildDrafts();
   history.replaceState({ screen: 'picker' }, '', location.pathname + location.search);
-  await Promise.all([loadFonts(), loadFlags()]);
+  await Promise.all([loadFonts(), loadFlags(), loadLogos()]);
   state.fontsReady = true;
   paintTiles();
   buildDrafts();

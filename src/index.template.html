@@ -79,6 +79,7 @@ __CSS__
       <div class="tpl-actions">
         <button type="button" class="btn btn-primary" id="tplUse">Начать с примером</button>
         <button type="button" class="btn btn-outline" id="tplEmpty">Пустой шаблон</button>
+        <button type="button" class="btn btn-outline" id="tplFromText" hidden>Из текста поста</button>
       </div>
       <p class="muted small">← → — листать слайды, Enter — начать</p>
     </div>
@@ -147,6 +148,12 @@ __CSS__
     </section>
 
     <aside class="form-panel" aria-label="Содержимое слайда">
+      <div class="import-callout" id="importCallout" hidden>
+        <span data-icon="text-aa"></span>
+        <span class="grow">Есть готовый текст поста? Вставь его — слайды соберутся сами.</span>
+        <button type="button" class="btn btn-outline btn-sm" id="btnImport">Вставить текст</button>
+      </div>
+      <section class="collab" id="collab" aria-label="Коллаборация"></section>
       <div class="form-head">
         <p class="eyebrow" id="formEyebrow"></p>
         <h2 id="formTitle"></h2>
@@ -160,6 +167,22 @@ __CSS__
 <p class="status" id="status" role="status" aria-live="polite"></p>
 
 <input type="file" id="fileInput" accept="image/*,video/*" hidden>
+<input type="file" id="logoInput" accept="image/png,image/svg+xml,image/webp,image/jpeg" hidden>
+
+<!-- ============================================== текст поста → слайды -->
+<div class="modal" id="importModal" hidden>
+  <div class="modal-card import-card" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <button type="button" class="icon-btn modal-close" id="importClose" aria-label="Закрыть" data-icon="x"></button>
+    <h2 id="importTitle">Вставить текст поста</h2>
+    <p class="muted" id="importHint"></p>
+    <textarea id="importText" rows="14" spellcheck="false" placeholder="8 приложений, которые помогут учиться продуктивнее&#10;&#10;Для ведения заметок&#10;Obsidian — приложение для заметок…"></textarea>
+    <p class="muted small">Текущие слайды заменятся — вернуть их можно через ⌘Z.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="importCancel">Отмена</button>
+      <button type="button" class="btn btn-primary" id="importConfirm">Разложить по слайдам</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===================================================== обрезка видео -->
 <div class="modal" id="videoTrimModal" hidden>

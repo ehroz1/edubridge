@@ -471,6 +471,76 @@ h1, h2, h3, p { margin: 0; }
 .tune > .hint { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
 .tpl-kinds-label { font-size: 13px; font-weight: 700; margin-bottom: -8px; }
 
+/* ---- текст поста → слайды */
+.import-callout {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding: 12px 12px 12px 14px;
+  border-radius: 16px; background: var(--active-bg); color: var(--active-text); font-size: 13.5px; font-weight: 600;
+}
+.import-callout .grow { flex: 1; min-width: 0; line-height: 1.35; }
+.import-callout svg { width: 22px; height: 22px; flex: none; }
+.import-callout .btn { flex: none; }
+.import-card { width: 720px; }
+.import-card textarea {
+  width: 100%; min-height: 280px; padding: 12px 14px; resize: vertical;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--input);
+  font: 400 14.5px/1.5 EBOnest, sans-serif;
+}
+.import-card textarea:focus { outline: none; border-color: var(--blue); box-shadow: var(--focus); }
+
+/* ---- коллаборация */
+.collab {
+  display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px; padding: 14px;
+  border: 1px solid var(--line); border-radius: 18px; background: var(--bg);
+}
+.collab-head { display: flex; gap: 10px; align-items: flex-start; }
+.collab-head svg { width: 22px; height: 22px; flex: none; fill: currentColor; margin-top: 1px; }
+.collab-head b { display: block; font-size: 14px; }
+.collab-head span { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.logo-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.logo-chip {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 2px 0 6px;
+  border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; font-weight: 600;
+}
+.lc-img { width: 44px; height: 28px; border-radius: 6px; background: #fff; display: grid; place-items: center; overflow: hidden; }
+.lc-img img { max-width: 38px; max-height: 22px; display: block; }
+.logo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.logo-tile { position: relative; }
+.logo-tile > button, .logo-tile.upload {
+  width: 100%; height: 88px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px; border: 0; border-radius: 14px; background: #fff; color: #121418;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.logo-tile.upload { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); border: 1px dashed transparent; }
+.logo-tile.upload svg { width: 22px; height: 22px; fill: currentColor; }
+.logo-tile > button:hover, .logo-tile.upload:hover { box-shadow: inset 0 0 0 2px var(--blue); }
+.logo-tile.on > button { box-shadow: inset 0 0 0 3px var(--blue); }
+.lt-img { height: 40px; width: 100%; display: grid; place-items: center; }
+.lt-img img { max-width: 86%; max-height: 38px; display: block; }
+.lt-name { font-size: 11.5px; font-weight: 600; line-height: 1.2; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.logo-tile .lt-del { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; background: #fff; color: #121418; box-shadow: 0 0 0 1px var(--line); }
+.logo-tile .lt-del svg { width: 13px; height: 13px; }
+.collab .hint { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+
+/* ---- флаги в форме */
+.flag-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.flag-chip {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 2px 0 6px;
+  border-radius: 999px; background: var(--hover); font-size: 13.5px; font-weight: 600;
+}
+.flag-chip img { width: 28px; height: 28px; display: block; }
+.field select.flag-add { width: auto; min-width: 190px; flex: 1; }
+
+/* ---- логотип внутри строки списка */
+.list-media { display: flex; align-items: center; gap: 10px; }
+.lm-thumb {
+  width: 52px; height: 52px; flex: none; padding: 0; border: 0; border-radius: 12px; background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong); display: grid; place-items: center; overflow: hidden; color: var(--muted);
+}
+.lm-thumb:hover { box-shadow: inset 0 0 0 2px var(--blue); }
+.lm-thumb img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.lm-thumb svg { width: 22px; height: 22px; fill: currentColor; }
+.lm-label { flex: 1; font-size: 12.5px; color: var(--muted); }
+
 /* ---- статус */
 .status {
   position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 60;
