@@ -390,6 +390,30 @@ function drawArc(ctx, x, y, w, color = C.blue) {
   return arcHeight(w);
 }
 
+/*
+ * Паттерн «Пролёты» (раздел 05): сетка из 4 колонок дуг, шаг по вертикали —
+ * около половины пролёта (как на образце в брендбуке, чуть свободнее, чтобы
+ * ряды не сливались), одна дуга акцентная. Рисуется внутри рамки x, y, w, h;
+ * нижний неполный ряд обрезается. accent — [ряд, колонка] акцентной дуги.
+ */
+function drawSpans(ctx, x, y, w, h, color, accentColor, accent = [2, 1]) {
+  const cols = 4;
+  const gap = Math.round(w * 0.035);
+  const aw = (w - gap * (cols - 1)) / cols;
+  const step = aw * 0.6;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  for (let r = 0; y + r * step < y + h; r++) {
+    for (let c = 0; c < cols; c++) {
+      const on = accentColor && r === accent[0] && c === accent[1];
+      drawArc(ctx, x + c * (aw + gap), y + r * step, aw, on ? accentColor : color);
+    }
+  }
+  ctx.restore();
+}
+
 /* Иконка Phosphor Fill размером size×size. */
 function drawGlyph(ctx, name, x, y, size, color) {
   const paths = GLYPHS[name];
