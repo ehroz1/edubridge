@@ -69,7 +69,7 @@ Runtime is three classic scripts sharing globals (no modules):
   dashes glued to the previous one, CSS-like line boxes using the fonts' hhea
   metrics in `METRICS`), pills/rubric plates (`RUBRICS`,
   `rubricPillStyle()` — rubric colors per surface; a pill can carry up to 3
-  overlapping flags), `drawLogo()`, `drawArc()`, `drawGlyph()`, `drawFlag()`
+  overlapping flags), `drawLogo()`, `drawArc()`, `drawSpans()` (the «Пролёты» arc pattern), `drawGlyph()`, `drawFlag()`
   / `drawFlagsRow()`, `drawMedia()` (cover/contain crop with zoom and pan,
   hatch placeholder when empty), progress bars, and the co-branding lockup
   (`lockupLayout()` / `drawLockup()`: edubridge | divider | partner logos,

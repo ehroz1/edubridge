@@ -1253,6 +1253,30 @@ function drawArc(ctx, x, y, w, color = C.blue) {
   return arcHeight(w);
 }
 
+/*
+ * Паттерн «Пролёты» (раздел 05): сетка из 4 колонок дуг, шаг по вертикали —
+ * около половины пролёта (как на образце в брендбуке, чуть свободнее, чтобы
+ * ряды не сливались), одна дуга акцентная. Рисуется внутри рамки x, y, w, h;
+ * нижний неполный ряд обрезается. accent — [ряд, колонка] акцентной дуги.
+ */
+function drawSpans(ctx, x, y, w, h, color, accentColor, accent = [2, 1]) {
+  const cols = 4;
+  const gap = Math.round(w * 0.035);
+  const aw = (w - gap * (cols - 1)) / cols;
+  const step = aw * 0.6;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  for (let r = 0; y + r * step < y + h; r++) {
+    for (let c = 0; c < cols; c++) {
+      const on = accentColor && r === accent[0] && c === accent[1];
+      drawArc(ctx, x + c * (aw + gap), y + r * step, aw, on ? accentColor : color);
+    }
+  }
+  ctx.restore();
+}
+
 /* Иконка Phosphor Fill размером size×size. */
 function drawGlyph(ctx, name, x, y, size, color) {
   const paths = GLYPHS[name];
@@ -1672,6 +1696,18 @@ function footerRow(ctx, env, y, variant, text, color) {
 /* Счётчик «4/9» справа — только если слайдов больше одного. */
 function counterText(env) {
   return env.total > 1 ? `${env.index + 1}/${env.total}` : '';
+}
+
+/*
+ * Крупный заголовок превью: уменьшает кегль (не ниже minSize), пока самое
+ * длинное слово не влезет по ширине, а строк не станет не больше maxLines.
+ */
+function fitTitle(ctx, text, st, width, maxLines, minSize) {
+  let lt = layoutText(ctx, text, st, width);
+  for (let size = st.size - 2; size >= minSize && (lt.tooWide || lt.lines.length > maxLines); size -= 2) {
+    lt = layoutText(ctx, text, Object.assign({}, st, { size }), width);
+  }
+  return lt;
 }
 
 /* Кегль, при котором строка без переносов влезает в ширину (для крупных цифр). */
@@ -3202,6 +3238,152 @@ KINDS.ytInterview = {
   },
 };
 
+/*
+ * Превью гайда или разбора: синий фон, крупный заголовок с ключевым словом
+ * Lime, справа паттерн «Пролёты» (одна дуга Lime) или фото в арке.
+ */
+KINDS.ytGuide = {
+  name: 'Превью гайда',
+  format: 'wide',
+  tune: { title: 'Заголовок' },
+  fields: [
+    { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'guide' },
+    { key: 'title', type: 'textarea', label: 'Заголовок', hint: '3–6 слов, до 3 строк', sample: 'Мотивационное письмо за 5 шагов' },
+    { key: 'accent', type: 'text', label: 'Ключевое слово', hint: 'Подсветится Lime — слово или фраза из заголовка', sample: '5 шагов' },
+    { key: 'sub', type: 'text', label: 'Подзаголовок', sample: 'Разбор с примерами' },
+    optPhoto('Встанет в арку справа вместо паттерна'),
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    fillRect(ctx, 0, 0, W, H, C.blue);
+    const rw = 420, rx = W - 64 - rw;
+    if (env.media('photo')) env.photo('photo', rx, 64, rw, H - 64, { shape: 'arch' });
+    else {
+      drawSpans(ctx, rx, 64, rw, H - 128, C.white, C.lime, [3, 2]);
+      env.slot('photo', rx, 64, rw, H - 128);
+    }
+    const colW = rx - 64 - 56;
+    const pill = env.pill(64, 64, d.rubric || 'guide', 'blue', { size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14, flagSize: 50, padFlag: 10 });
+    const below = wideCollab(env, pill.w, pill.h, colW, 'onBlue');
+    const subY = H - 64 - 36;
+    if (d.sub) drawLine(ctx, d.sub, 64, subY, S('onest', 600, 36, 1), { color: C.skyTint });
+    const tst = env.t('title', S('unb', 600, 88, 1.04, -0.03));
+    const title = fitTitle(ctx, d.title, tst, colW, 3, Math.round(tst.size * 0.72));
+    env.lines(title, 3, 'Заголовок');
+    const top = 64 + pill.h + below;
+    const bottom = d.sub ? subY - 24 : H - 64;
+    const free = bottom - top - title.h;
+    env.minSpace(free, 24, 'Заголовок не помещается — 3–6 слов');
+    title.draw(ctx, 64, top + Math.max(0, free) / 2, { color: C.white, accent: { word: d.accent, color: C.lime } });
+  },
+};
+
+/* Превью с цифрой: Ink, крупное число Lime, пояснение и источник; фото по желанию — в арке справа. */
+KINDS.ytNumber = {
+  name: 'Превью с цифрой',
+  format: 'wide',
+  tune: { number: 'Число', title: 'Пояснение' },
+  fields: [
+    { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'numbers' },
+    { key: 'number', type: 'text', label: 'Число', hint: 'Коротко: «1 из 4», «42%», «€0»', sample: '1 из 4' },
+    { key: 'text', type: 'textarea', label: 'Пояснение', hint: 'До 2 строк', sample: 'студентов Erasmus+ впервые живут за границей' },
+    { key: 'source', type: 'text', label: 'Источник', hint: 'Обязателен под каждой цифрой', sample: 'Источник: Erasmus+ Annual Report' },
+    optPhoto('Встанет в арку справа'),
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    fillRect(ctx, 0, 0, W, H, C.ink);
+    const hasPhoto = Boolean(env.media('photo'));
+    const rw = 380, rx = W - 64 - rw;
+    if (hasPhoto) env.photo('photo', rx, 64, rw, H - 64, { shape: 'arch' });
+    const colW = hasPhoto ? rx - 64 - 56 : W - 128;
+    const pill = env.pill(64, 64, d.rubric || 'numbers', 'ink', { size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14, flagSize: 50, padFlag: 10 });
+    const below = wideCollab(env, pill.w, pill.h, colW, 'onDark');
+    const srcY = H - 64 - 28;
+    if (d.source) drawLine(ctx, d.source, 64, srcY, S('onest', 500, 28, 1), { color: C.mistDark });
+    const nBase = env.t('number', S('unb', 600, 230, 0.9, -0.05));
+    const nst = fitSize(ctx, d.number || '', nBase, colW, Math.round(nBase.size * 0.6));
+    const num = layoutText(ctx, d.number, nst, colW);
+    if (num.lines.length > 1) env.warn('Число не помещается в одну строку — сократи его');
+    const txt = layoutText(ctx, d.text, env.t('title', S('onest', 600, 48, 1.2)), Math.min(colW, 780));
+    env.lines(txt, 2, 'Пояснение');
+    const top = 64 + pill.h + below;
+    const bottom = d.source ? srcY - 32 : H - 64;
+    const blockH = num.h + 28 + txt.h;
+    const free = bottom - top - blockH;
+    env.minSpace(free, 24, 'Текст не помещается');
+    let y = top + Math.max(0, free) / 2;
+    num.draw(ctx, 64, y, { color: C.lime });
+    y += num.h + 28;
+    txt.draw(ctx, 64, y, { color: C.white });
+  },
+};
+
+/*
+ * Превью сравнения: две половины (фото или Bridge Blue / Ink), флаг и
+ * название на каждой, по центру круг Lime с «vs».
+ */
+KINDS.ytVersus = {
+  name: 'Превью сравнения',
+  format: 'wide',
+  noFlags: true,   // флаги — часть макета
+  tune: { title: 'Названия' },
+  fields: [
+    { key: 'pill', type: 'text', label: 'Плашка', sample: 'Сравнение' },
+    { key: 'vs', type: 'text', label: 'Между половинами', hint: '«vs» или «или»', sample: 'vs' },
+    { key: 'flagA', type: 'flag', label: 'Слева · страна', sample: 'de' },
+    { key: 'nameA', type: 'text', label: 'Слева · название', hint: 'Страна, город или вуз', sample: 'Германия' },
+    { key: 'noteA', type: 'text', label: 'Слева · подпись', sample: 'Госвузы без платы за обучение' },
+    { key: 'photoA', type: 'media', label: 'Слева · фото — по желанию', video: true, optional: true, hint: 'Кампус или город; без фото — Bridge Blue' },
+    { key: 'flagB', type: 'flag', label: 'Справа · страна', sample: 'nl' },
+    { key: 'nameB', type: 'text', label: 'Справа · название', sample: 'Нидерланды' },
+    { key: 'noteB', type: 'text', label: 'Справа · подпись', sample: 'Всё обучение на английском' },
+    { key: 'photoB', type: 'media', label: 'Справа · фото — по желанию', video: true, optional: true, hint: 'Без фото — Ink' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const half = W / 2;
+    const base = env.t('title', S('unb', 600, 68, 1.02, -0.03));
+    const tw = half - 64 - 104;
+    // оба названия одним кеглем — по тому, которое длиннее
+    const nst = Object.assign({}, base, { size: Math.min(...['A', 'B'].map(s => fitTitle(ctx, d['name' + s], base, tw, 2, Math.round(base.size * 0.7)).size)) });
+    [['A', C.blue], ['B', C.ink]].forEach(([s, color], i) => {
+      const x0 = i * half;
+      const key = 'photo' + s;
+      if (env.media(key)) {
+        env.photo(key, x0, 0, half, H, {});
+        fillVGradient(ctx, x0, 0, half, H, [[0, 'rgba(18,20,24,0.45)'], [0.3, 'rgba(18,20,24,0.1)'], [0.55, 'rgba(18,20,24,0.25)'], [1, 'rgba(18,20,24,0.9)']]);
+      } else {
+        fillRect(ctx, x0, 0, half, H, color);
+        env.slot(key, x0, 0, half, H);
+      }
+      // с внутренней стороны оставляем место под круг «vs»
+      const tx = x0 + (i === 0 ? 64 : 104);
+      const note = d['note' + s];
+      const noteY = H - 64 - 30;
+      if (note) {
+        const nt = layoutText(ctx, note, S('onest', 500, 30, 1.2), tw);
+        if (nt.lines.length > 1) env.warn('Подпись не помещается в строку — сократи её');
+        drawLine(ctx, nt.lines[0] || '', tx, noteY, S('onest', 500, 30, 1), { color: i === 0 ? C.skyTint : C.mistDark });
+      }
+      const name = layoutText(ctx, d['name' + s], nst, tw);
+      env.lines(name, 2, 'Название');
+      const nameY = (note ? noteY - 20 : H - 64) - name.h;
+      name.draw(ctx, tx, nameY, { color: C.white });
+      const flag = d['flag' + s];
+      if (flag && FLAGS[flag]) drawFlag(ctx, flag, tx, nameY - 28 - 112, 112);
+      env.fits(80 + 64 + 40, nameY - 28 - (flag ? 112 : 0), 'Названия не помещаются — сократи их');
+    });
+    const r = 78;
+    fillCircle(ctx, half, H / 2, r, C.lime);
+    const vs = d.vs || 'vs';
+    const vst = fitSize(ctx, vs, S('unb', 700, 56, 1, -0.02), r * 1.5, 30);
+    drawLine(ctx, vs, half - textWidth(ctx, vs, vst) / 2, H / 2 - vst.size / 2, vst, { color: C.ink });
+    const pill = drawPill(ctx, 64, 64, d.pill || RUBRICS.countries.label, Object.assign({ size: 32, weight: 700, padX: 28, padY: 16 }, rubricPillStyle('countries', 'blue')));
+    env.collab(W - 64, 64 + (pill.h - 44) / 2, 44, 'monoWhite', 'right', half - 64 - 40);
+  },
+};
+
 KINDS.ytLowerThird = {
   name: 'Плашка спикера',
   format: 'hd',
@@ -3342,6 +3524,9 @@ const RESOURCES_SAMPLE = `8 приложений, которые помогут 
  * «+ слайд». rule/structure/volume — из «Правил для форматов» (Tone of Voice).
  * importer — если есть, в редакторе появляется «Вставить текст поста».
  */
+/* Превью YouTube 1280×720 — в одном материале можно собрать несколько вариантов. */
+const YT_COVERS = ['ytWebinar', 'ytInterview', 'ytGuide', 'ytNumber', 'ytVersus'];
+
 const TEMPLATES = [
   {
     id: 'news', group: 'post', rubric: 'news', name: 'Новость',
@@ -3598,7 +3783,7 @@ const TEMPLATES = [
     structure: 'Плашка → тема → подзаголовок',
     volume: '1 превью',
     slides: [{ kind: 'ytWebinar' }],
-    allowed: ['ytWebinar', 'ytInterview'], max: 5,
+    allowed: YT_COVERS, max: 5,
   },
   {
     id: 'ytInterview', group: 'youtube', rubric: 'interview', name: 'Превью интервью',
@@ -3607,7 +3792,34 @@ const TEMPLATES = [
     structure: 'Плашка → маршрут → герой',
     volume: '1 превью',
     slides: [{ kind: 'ytInterview' }],
-    allowed: ['ytWebinar', 'ytInterview'], max: 5,
+    allowed: YT_COVERS, max: 5,
+  },
+  {
+    id: 'ytGuide', group: 'youtube', rubric: 'guide', name: 'Превью гайда',
+    desc: 'Синий фон, крупный заголовок с ключевым словом Lime, справа паттерн «Пролёты» или фото в арке.',
+    rule: 'Название видео: «Тема | Вуз | edubridge», до 60 знаков',
+    structure: 'Плашка → заголовок → подзаголовок',
+    volume: '1 превью',
+    slides: [{ kind: 'ytGuide' }],
+    allowed: YT_COVERS, max: 5,
+  },
+  {
+    id: 'ytNumber', group: 'youtube', rubric: 'numbers', name: 'Превью с цифрой',
+    desc: 'Ink, крупное число Lime, пояснение в 2 строки и источник; фото в арке — по желанию.',
+    rule: 'У каждой цифры есть источник и дата',
+    structure: 'Плашка → число → пояснение → источник',
+    volume: '1 превью',
+    slides: [{ kind: 'ytNumber' }],
+    allowed: YT_COVERS, max: 5,
+  },
+  {
+    id: 'ytVersus', group: 'youtube', rubric: 'countries', name: 'Превью сравнения',
+    desc: 'Две половины — страны, города или вузы: флаг, название и подпись, по центру «vs» на Lime.',
+    rule: 'Названия вузов — официальные, латиницей',
+    structure: 'Слева → vs → справа',
+    volume: '1 превью',
+    slides: [{ kind: 'ytVersus' }],
+    allowed: YT_COVERS, max: 5,
   },
   {
     id: 'ytLowerThird', group: 'youtube', rubric: 'webinar', name: 'Плашка спикера',
