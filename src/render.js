@@ -417,13 +417,20 @@ function loadFlags() {
   return Promise.all(jobs);
 }
 
-/* Круглый флаг диаметром size. ring — белая обводка 4 px (флаг на фото). */
+/* Круглый флаг диаметром size. ring — обводка (белая 4 px — флаг на фото). */
 function drawFlag(ctx, code, x, y, size, opts = {}) {
   if (!code) return;
-  if (opts.ring) fillCircle(ctx, x + size / 2, y + size / 2, size / 2 + opts.ring, C.white);
+  if (opts.ring) fillCircle(ctx, x + size / 2, y + size / 2, size / 2 + opts.ring, opts.ringColor || C.white);
   const img = FLAG_IMAGES[code];
   if (img) ctx.drawImage(img, x, y, size, size);
   else fillCircle(ctx, x + size / 2, y + size / 2, size / 2, C.mist);
+}
+
+/* Ряд флагов с небольшим нахлёстом; каждый следующий — поверх предыдущего. Возвращает ширину. */
+function drawFlagsRow(ctx, codes, x, y, size, opts = {}) {
+  const list = codes.filter(Boolean);
+  list.forEach((code, i) => drawFlag(ctx, code, x + i * size * 0.72, y, size, i || opts.ring ? { ring: opts.ring || Math.max(2, size * 0.05), ringColor: opts.ringColor } : {}));
+  return flagsRowWidth(list.length, size);
 }
 
 /* ------------------------------------------------------------ фото/видео */
@@ -489,6 +496,89 @@ const HATCH_LIGHT = [C.mistDark, C.mist, 4, 36];
 const HATCH_DARK = ['#8A909C', '#A7ACB6', 4, 36];
 const HATCH_INK = ['#2A2E36', C.graphite, 4, 36];
 
+/* ------------------------------------------------------------ ко-брендинг */
+
+/*
+ * Логотип партнёра, перекрашенный в один цвет по его прозрачности (монохром
+ * по брендбуку: «оба логотипа в основной версии или оба в монохроме»).
+ * Кешируется офскрин-холстом: SVG растрируется один раз с запасом (1400 px).
+ */
+const TINT_CACHE = new Map();
+function tintedLogo(logo, color) {
+  const key = logo.id + '|' + color;
+  let c = TINT_CACHE.get(key);
+  if (c) return c;
+  const [iw, ih] = mediaSize(logo.img);
+  if (!iw || !ih) return null;
+  const k = Math.min(4, 1400 / Math.max(iw, ih));
+  c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(iw * k));
+  c.height = Math.max(1, Math.round(ih * k));
+  const g = c.getContext('2d');
+  g.drawImage(logo.img, 0, 0, c.width, c.height);
+  if (color) {
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = color;
+    g.fillRect(0, 0, c.width, c.height);
+  }
+  TINT_CACHE.set(key, c);
+  return c;
+}
+
+/* Цвет партнёрских логотипов и разделителя под версию нашего логотипа. */
+function lockupColors(variant) {
+  const dark = variant === 'onBlue' || variant === 'onDark' || variant === 'monoWhite';
+  return {
+    logo: dark ? C.white : C.ink,
+    divider: variant === 'onBlue' ? C.sky : dark ? 'rgba(255,255,255,0.4)' : C.mistDark,
+  };
+}
+
+/*
+ * Раскладка «edubridge | партнёр | партнёр» — раздел «Ко-брендинг»:
+ * разделитель высотой ~1,5× вордмарка, отступ до логотипов 2X, знак партнёра
+ * не выше 1,6× вордмарка, выравнивание по центру строки вордмарка.
+ * h — высота нашего логотипа (рамка viewBox). partners: [{ logo, mono }].
+ */
+function lockupLayout(h, partners, variant) {
+  const gap = h * 0.8;
+  const divW = Math.max(2, Math.round(h * 0.06));
+  const maxH = h * 1.1, maxW = h * 4.6;
+  const items = [];
+  let w = logoWidth(h);
+  const colors = lockupColors(variant);
+  for (const p of partners) {
+    const src = p.mono ? tintedLogo(p.logo, colors.logo) : tintedLogo(p.logo, null);
+    if (!src) continue;
+    const k = Math.min(maxW / src.width, maxH / src.height);
+    const pw = src.width * k, ph = src.height * k;
+    w += gap + divW + gap;
+    items.push({ src, x: w, w: pw, h: ph });
+    w += pw;
+  }
+  return { w, items, gap, divW, colors };
+}
+
+/* Рисует логотип с партнёрами. align: 'left' — x слева, 'right' — x справа. Возвращает ширину. */
+function drawLockup(ctx, x, y, h, variant, partners, align = 'left') {
+  const L = lockupLayout(h, partners || [], variant);
+  const x0 = align === 'right' ? x - L.w : x;
+  drawLogo(ctx, x0, y, h, variant);
+  const cy = y + h * 0.6;   // середина строчных вордмарка, не рамки viewBox
+  const divH = h * 1.4;
+  for (const it of L.items) {
+    fillRect(ctx, x0 + it.x - L.gap - L.divW, cy - divH / 2, L.divW, divH, L.colors.divider);
+    ctx.drawImage(it.src, x0 + it.x, cy - it.h / 2, it.w, it.h);
+  }
+  return L.w;
+}
+
+/* Цвет в rgba с прозрачностью — для тонировки фото цветом фона. */
+function rgba(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
 /* --------------------------------------------------------------- плашки */
 
 /*
@@ -496,14 +586,27 @@ const HATCH_INK = ['#2A2E36', C.graphite, 4, 36];
  * padX, padY, bg, color, border (обводка внутрь), borderWidth, dot (цвет
  * точки «в эфире»), dotSize, gap, flag (код страны — флаг слева).
  */
+function pillFlags(o) {
+  const list = (o.flags || []).filter(Boolean);
+  if (o.flag && !list.includes(o.flag)) list.unshift(o.flag);
+  return list.slice(0, 3);
+}
+
+/* Ширина ряда флагов, которые чуть заходят друг на друга (как аватары в группе). */
+function flagsRowWidth(n, size) {
+  return n ? size + (n - 1) * size * 0.72 : 0;
+}
+
 function pillMetrics(ctx, text, o) {
   const st = { family: 'onest', weight: o.weight || 600, size: o.size || 30, lh: 1, track: o.track || 0 };
   const tw = textWidth(ctx, text, st);
   const gap = o.gap ?? 16;
+  const flags = pillFlags(o);
+  const fs = o.flagSize || st.size * 1.45;
   let lead = 0;
   if (o.dot) lead += (o.dotSize || 18) + gap;
-  if (o.flag) lead += (o.flagSize || st.size * 1.45) + (o.flagGap ?? 12);
-  const padL = o.flag ? (o.padFlag ?? 10) : (o.padX ?? 32);
+  if (flags.length) lead += flagsRowWidth(flags.length, fs) + (o.flagGap ?? 12);
+  const padL = flags.length ? (o.padFlag ?? Math.round(st.size / 3)) : (o.padX ?? 32);
   const w = padL + lead + tw + (o.padX ?? 32);
   const h = st.size + (o.padY ?? 18) * 2;
   return { w, h, st, tw, padL, gap };
@@ -515,10 +618,11 @@ function drawPill(ctx, x, y, text, o = {}) {
   if (o.bg) fillRR(ctx, x, y, w, h, h / 2, o.bg);
   if (o.border) strokeInsetRR(ctx, x, y, w, h, h / 2, o.border, o.borderWidth || 3);
   let cx = x + padL;
-  if (o.flag) {
+  const flags = pillFlags(o);
+  if (flags.length) {
     const fs = o.flagSize || st.size * 1.45;
-    drawFlag(ctx, o.flag, cx, y + (h - fs) / 2, fs);
-    cx += fs + (o.flagGap ?? 12);
+    drawFlagsRow(ctx, flags, cx, y + (h - fs) / 2, fs, { ring: o.bg ? 3 : 0, ringColor: o.bg });
+    cx += flagsRowWidth(flags.length, fs) + (o.flagGap ?? 12);
   }
   if (o.dot) {
     const ds = o.dotSize || 18;
@@ -548,6 +652,7 @@ const RUBRICS = {
   partner: { label: 'Партнёрский материал' },
   interview: { label: 'Интервью' },
   quiz: { label: 'Квиз' },
+  resources: { label: 'Подборка' },
 };
 
 function rubricPillStyle(rubric, surface = 'light') {
@@ -569,6 +674,7 @@ function rubricPillStyle(rubric, surface = 'light') {
     case 'numbers': return onBlue || onInk ? { bg: C.paper, color: C.ink } : { bg: C.paper, color: C.ink, border: C.ink };
     case 'partner': return onBlue || onInk ? { bg: C.white, color: C.slate } : { border: C.slate, color: C.slate };
     case 'quiz': return { bg: C.lime, color: C.ink };
+    case 'resources': return onBlue ? { bg: C.white, color: C.blue } : onInk ? { bg: C.paper, color: C.ink } : { bg: C.mist, color: C.ink };
     default: return { bg: C.mist, color: C.ink };
   }
 }

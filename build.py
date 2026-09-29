@@ -147,12 +147,24 @@ def flags() -> str:
     return "const FLAGS = " + json.dumps(out) + ";\n"
 
 
+def partners() -> str:
+    """Логотипы партнёров для ко-брендинга (brand/partners/*.svg, имена — в names.json).
+    Файлы чёрные: в макете они перекрашиваются в Ink или белый под фон."""
+    folder = BRAND / "partners"
+    names = json.loads((folder / "names.json").read_text(encoding="utf-8")) if folder.exists() else {}
+    out = []
+    for f in sorted(folder.glob("*.svg")) if folder.exists() else []:
+        out.append({"id": "lib:" + f.stem, "name": names.get(f.stem, f.stem), "url": data_url(f, "image/svg+xml")})
+    print(f"логотипов партнёров: {len(out)}")
+    return "const PARTNER_LOGOS = " + json.dumps(out, ensure_ascii=False) + ";\n"
+
+
 def main() -> int:
     if not SRC.exists():
         print("нет папки src/ — запусти скрипт из корня проекта")
         return 1
 
-    assets_js = brand_paths() + glyphs() + ui_icons() + flags()
+    assets_js = brand_paths() + glyphs() + ui_icons() + flags() + partners()
 
     icon_svg = BRAND / "pwa-icon.svg"
     icon_mask = BRAND / "pwa-icon-maskable.svg"

@@ -40,7 +40,7 @@ chosen so that none of them produce warnings.
 `__FONT_FACES__`, `__CSS__`, `__ASSETS_JS__`, `__RENDER_JS__`,
 `__TEMPLATES_JS__`, `__APP_JS__`, `__FAVICON__`, `__APPLE_TOUCH_ICON__`
 replaced, and the build fails if a token is missing from the template.
-`__ASSETS_JS__` defines four globals:
+`__ASSETS_JS__` defines five globals:
 
 - `BRAND_PATHS` — the logo wordmark/arc and the standalone arc as SVG path
   data plus viewBox, extracted from `brand/logo/*.svg`. They are drawn with
@@ -50,6 +50,12 @@ replaced, and the build fails if a token is missing from the template.
   (`fill="currentColor"`, so they follow the theme).
 - `FLAGS` — Circle Flags (`brand/flags/`) as data URIs, decoded once by
   `loadFlags()` because canvas drawing must be synchronous.
+- `PARTNER_LOGOS` — the WE media group co-branding library
+  (`brand/partners/*.svg`, black artwork, display names in `names.json`) as
+  `[{ id: 'lib:<stem>', name, url }]`. Sorted by file name, so files carry a
+  numeric prefix. They were copied from `ehroz1/wemedia-group-branding`
+  (`assets/logos/*/…_black.svg`); the site itself is not reachable from the
+  sandbox.
 
 Fonts are embedded as `@font-face` families `EBOnest` (400–800) and
 `EBUnbounded` (500–700) — unique names so a locally installed Onest can't
@@ -62,35 +68,67 @@ Runtime is three classic scripts sharing globals (no modules):
   `layoutText()` (word wrap with glue words, numbers glued to the next word,
   dashes glued to the previous one, CSS-like line boxes using the fonts' hhea
   metrics in `METRICS`), pills/rubric plates (`RUBRICS`,
-  `rubricPillStyle()` — rubric colors per surface), `drawLogo()`,
-  `drawArc()`, `drawGlyph()`, `drawFlag()`, `drawMedia()` (cover/contain crop
-  with zoom and pan, hatch placeholder when empty), progress bars. It knows
-  nothing about templates or the DOM beyond `Image`/`HTMLVideoElement`.
+  `rubricPillStyle()` — rubric colors per surface; a pill can carry up to 3
+  overlapping flags), `drawLogo()`, `drawArc()`, `drawGlyph()`, `drawFlag()`
+  / `drawFlagsRow()`, `drawMedia()` (cover/contain crop with zoom and pan,
+  hatch placeholder when empty), progress bars, and the co-branding lockup
+  (`lockupLayout()` / `drawLockup()`: edubridge | divider | partner logos,
+  partner logos tinted to Ink/white through a cached offscreen canvas in
+  `tintedLogo()`). It knows nothing about templates or the DOM beyond
+  `Image`/`HTMLVideoElement`.
 - **`src/templates.js`** — the single source of truth for layouts.
   `KINDS` maps a slide type to `{ name, format, fields, tune, draw }`.
   `fields` drives the form (types: `text`, `textarea`, `select`, `toggle`,
-  `flag`, `icon`, `media`, `list`) and each field's `sample` is the brandbook
-  example text. `draw(ctx, data, env)` lays the slide out in export pixels
+  `flag`, `flags`, `icon`, `media`, `list`) and each field's `sample` is the
+  brandbook example text. A field may have `showIf(data)` (hidden when false,
+  e.g. speakers 2–3 of the webinar) and a select may have `rebuild: true`
+  (re-renders the form on change). `list` items may contain a `media`
+  subfield; its media key is `<listKey>.<index>.<subKey>` and is remapped
+  when items move or are deleted (`remapListMedia()`). Every kind gets
+  `FLAGS_FIELD` ("Флаги — по желанию", up to 3) appended automatically unless
+  it sets `noFlags: true`. Optional photos use the shared `optPhoto()` field
+  and are drawn with `env.band()` / `env.bgPhoto()` so an empty slot keeps
+  the exact brandbook layout. `draw(ctx, data, env)` lays the slide out in export pixels
   (1080×1350, 1080×1920, 1280×720, 1920×1080) with numbers taken from the
   brandbook mockups — don't duplicate them elsewhere. `TEMPLATES` lists what
   the picker shows: group, rubric, description, Tone-of-Voice rule/
   structure/volume, starting `slides` (kind + optional sample overrides),
   `allowed` kinds for "+ Слайд" and `max` slide count. `sampleData()` /
   `emptyData()` build slide data for "Начать с примером" / "Пустой шаблон".
+  A template may define `importer(text) → [{ kind, data }]` plus
+  `importHint`; then the picker shows "Из текста поста" and the editor shows
+  "Вставить текст" (the resources template uses `parseResourcePost()`:
+  first line = title with a leading number, `Name — description` lines are
+  items, other lines are categories with an icon guessed by
+  `CATEGORY_ICONS`).
 - **`src/app.js`** — UI and state. `renderSlide()` builds the `env` passed to
   `draw`: size, `index`/`total`/`ordinal` (automatic counters, progress bars,
   guide step numbers), `rubric` of the template, `media(key)`,
   `photo(key, …)` (draws and registers a hit-test slot), `t(role, style)`
   (applies the per-slide "Подстройка" size/line-height percentages),
-  and warning helpers (`lines`, `minSpace`, `fits`, `warn`) that feed the
-  warnings bar, the red dots on thumbnails and the "Уместить" auto-fit.
+  `band(key, …)` / `bgPhoto(key, color, alpha)` (optional photos, drawn only
+  when loaded), `flags` + `drawFlags()`, `pill()` / `pillSize()` (rubric
+  plate with the slide's flags unless `noFlags`), `logo(x, y, h, variant,
+  align, maxW)` (edubridge or the co-branding lockup; scales down to `maxW`,
+  not below 0.5×), `collab(…)` (same, but draws nothing without partners —
+  for slides that have no logo in the brandbook), `hasCollab`, and warning
+  helpers (`lines`, `minSpace`, `fits`, `warn`) that feed the warnings bar,
+  the red dots on thumbnails and the "Уместить" auto-fit. Always pass a
+  `maxW` to `logo`/`collab` where the lockup shares a row with something:
+  three partner logos are wide.
 
-State: `state.draft` is `{ id, templateId, name, mode, slides: [{ id, kind,
-data, tune }] }` and is autosaved to `localStorage` (`edubridge.drafts.v1`,
-max 40 drafts). Media is **not** persisted: `state.media[slideId][fieldKey]`
+State: `state.draft` is `{ id, templateId, name, mode, collab: { ids, mono },
+slides: [{ id, kind, data, tune }] }` and is autosaved to `localStorage`
+(`edubridge.drafts.v1`, max 40 drafts). `collab.ids` (max 3) point to
+`lib:*` library logos or `up:*` user uploads, which live in
+`edubridge.logos.v1` as data URLs (rasters are downscaled on upload). With
+`mono` (the brandbook default) both logos are monochrome: our logo `main` →
+`monoInk`, `onDark` → `monoWhite`, partners tinted; library logos are always
+tinted because their artwork is black. Template previews pass
+`collab: null`, so the picker never shows a draft's partners. Media is **not** persisted: `state.media[slideId][fieldKey]`
 holds `{ el, zoom, panX, panY, name, isVideo }` keyed by the slide's stable id
 (never by position), so reordering/duplicating/deleting slides keeps photos
-attached to the right slide. Undo/redo snapshots `slides` (deep) and `media`
+attached to the right slide. Undo/redo snapshots `slides` (deep), `collab` and `media`
 (shallow per entry — media objects are copied, elements shared); a `tag`
 coalesces bursts of typing or slider drags into one step. When adding a data
 field, keep saved drafts compatible: `normalizeDraft()` merges old data over
