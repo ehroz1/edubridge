@@ -1322,6 +1322,13 @@ function textInput(slide, value, multiline, onValue, tag) {
   return input;
 }
 
+/* Цвет образца фона: фоны постов, палитра обложки Telegram, «По рубрике» — цвет рубрики. */
+function swatchColor(value, d) {
+  if (SURFACES[value]) return SURFACES[value].bg;
+  if (TG_BG[value]) return TG_BG[value];
+  return tgTheme(d.rubric || 'news', 'auto').bg;
+}
+
 function fieldNode(slide, f) {
   const d = slide.data;
   const id = `f-${slide.id}-${f.key}`;
@@ -1347,7 +1354,7 @@ function fieldNode(slide, f) {
           const b = document.createElement('button');
           b.type = 'button';
           b.className = 'swatch' + (d[f.key] === value ? ' on' : '');
-          b.innerHTML = `<i style="background:${SURFACES[value].bg}"></i>${name}`;
+          b.innerHTML = `<i style="background:${swatchColor(value, d)}"></i>${name}`;
           b.addEventListener('click', () => {
             pushUndo();
             d[f.key] = value;

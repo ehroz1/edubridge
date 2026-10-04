@@ -1552,7 +1552,7 @@ KINDS.tgCover = {
   format: 'wide',
   tune: { title: 'Заголовок' },
   fields: [
-    { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'deadline' },
+    { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'deadline', rebuild: true },  // образец «По рубрике» меняет цвет
     { key: 'bg', type: 'select', label: 'Фон', hint: '«По рубрике» — цвет из брендбука; можно выбрать другой из палитры', options: TG_BG_CHOICES, sample: 'auto' },
     { key: 'title', type: 'textarea', label: 'Заголовок', hint: 'До 2 строк. Логотип не ставим — он уже в аватаре', sample: 'Chevening: 14 дней' },
     optPhoto('Встанет в арку справа'),
