@@ -1404,14 +1404,15 @@ KINDS.reelsCover = {
   format: 'story',
   tune: { title: 'Заголовок' },
   fields: [
-    { key: 'photo', type: 'media', label: 'Кадр из ролика', video: true },
+    { key: 'photo', type: 'media', label: 'Кадр из ролика', video: true, hint: 'Встанет фоном под синей тонировкой' },
     { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'stories' },
     { key: 'title', type: 'textarea', label: 'Заголовок', hint: 'Держится в центральных 1080×1440 — зоне обложки в сетке', sample: 'Один день в NYU Shanghai' },
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    env.photo('photo', 0, 0, W, H, { placeholder: HATCH_DARK });
-    fillRect(ctx, 0, 0, W, H, 'rgba(10,52,245,0.55)');
+    // тонировка как у обложки подборки: Bridge Blue 76% — фото читается фактурой, текст всегда контрастный
+    fillRect(ctx, 0, 0, W, H, C.blue);
+    if (!env.bgPhoto('photo', C.blue, 0.76)) env.slot('photo', 0, 0, W, H);
     const pillO = { size: 40, padX: 36, padY: 22 };
     const rubric = d.rubric || 'stories';
     const pm = env.pillSize(rubric, 'blue', pillO);
@@ -2129,7 +2130,7 @@ const TEMPLATES = [
 
   {
     id: 'reelsCover', group: 'reels', rubric: 'stories', name: 'Обложка Reels',
-    desc: 'Кадр под синим 55%, плашка и заголовок в центральной зоне 1080×1440.',
+    desc: 'Кадр под синей тонировкой 76%, плашка и заголовок в центральной зоне 1080×1440.',
     rule: 'Хук в первые 2 секунды, длина 20–45 с',
     structure: 'Плашка рубрики → заголовок',
     volume: '1 обложка',
