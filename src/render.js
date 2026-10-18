@@ -703,6 +703,38 @@ function rubricPillStyle(rubric, surface = 'light') {
   }
 }
 
+/*
+ * Свой цвет плашки — из «Оформления» слайда. Палитра брендбука; на Lime и
+ * Coral текст только Ink. «Контур» — обводка цветом текста фона.
+ */
+const PILL_STYLES = [
+  ['ink', 'Ink'], ['white', 'Белая'], ['blue', 'Bridge Blue'], ['skyTint', 'Sky Tint'], ['sky', 'Sky'],
+  ['lime', 'Lime'], ['coral', 'Coral'], ['mist', 'Mist'], ['outline', 'Контур'],
+];
+function pillLookStyle(key, dark) {
+  switch (key) {
+    case 'ink': return { bg: C.ink, color: C.white, border: null };
+    case 'white': return { bg: C.white, color: C.ink, border: null };
+    case 'blue': return { bg: C.blue, color: C.white, border: null };
+    case 'skyTint': return { bg: C.skyTint, color: C.blue, border: null };
+    case 'sky': return { bg: C.sky, color: C.ink, border: null };
+    case 'lime': return { bg: C.lime, color: C.ink, border: null };
+    case 'coral': return { bg: C.coral, color: C.ink, border: null };
+    case 'mist': return { bg: C.mist, color: C.ink, border: null };
+    case 'outline': return { bg: null, border: dark ? C.white : C.ink, color: dark ? C.white : C.ink };
+    default: return null;
+  }
+}
+
+/* Тёмный ли цвет (#RRGGBB) — для выбора белого или Ink поверх. */
+function isDarkColor(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return false;
+  const n = parseInt(m[1], 16);
+  const lum = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+  return lum < 110;   // Coral (≈122) — светлый: на нём по брендбуку Ink
+}
+
 function drawRubric(ctx, x, y, rubric, surface, o = {}) {
   const style = rubricPillStyle(rubric, surface);
   const text = o.text || (RUBRICS[rubric] ? RUBRICS[rubric].label : '');

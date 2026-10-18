@@ -84,7 +84,7 @@ function optPhoto(hint) {
  */
 function footerRow(ctx, env, y, variant, text, color) {
   const lw = env.logo(80, y, 44, variant, 'left', 760);
-  if (!text) return;
+  if (!text || !env.show('meta')) return;
   const room = 920 - lw - 40;
   const st = fitSize(ctx, text, S('onest', 500, 30, 1), room, 24);
   const tw = textWidth(ctx, text, st);
@@ -98,9 +98,34 @@ function footerRow(ctx, env, y, variant, text, color) {
   drawLine(ctx, text, 1000 - Math.min(sw, 920), y - 36, small, { color });
 }
 
+/*
+ * Подзаголовок под заголовком — поле «Подзаголовок» есть у всех слайдов с
+ * заголовком (пусто — нет). Возвращает блок с тем же интерфейсом, что
+ * layoutText: lines/tooWide для проверок, h — общая высота, draw.
+ */
+const SUBTITLE_FIELD = { key: 'subtitle', type: 'textarea', label: 'Подзаголовок — по желанию', hint: 'Пусто — без подзаголовка. Скрыть можно и в «Оформлении»' };
+function titled(ctx, env, d, title, width, o = {}) {
+  const text = String(d.subtitle || '').trim();
+  if (!text || !env.show('sub')) return title;
+  const size = Math.round(Math.max(28, Math.min(o.subMax || 44, title.size * 0.42)));
+  const sub = layoutText(ctx, text, env.t('sub', S('onest', 500, size, 1.3)), width);
+  env.lines(sub, 3, 'Подзаголовок');
+  const gap = Math.round(Math.max(14, Math.min(32, title.size * 0.3)));
+  return {
+    lines: title.lines, tooWide: title.tooWide || sub.tooWide, size: title.size,
+    h: title.h + gap + sub.h,
+    maxW: Math.max(title.maxW || 0, sub.maxW || 0),
+    draw(ctx2, x, y, opts = {}) {
+      title.draw(ctx2, x, y, opts);
+      const color = opts.subColor || (opts.color === C.white ? 'rgba(255,255,255,0.82)' : C.graphite);
+      sub.draw(ctx2, x, y + title.h + gap, { color, align: opts.align, width: opts.width });
+    },
+  };
+}
+
 /* Счётчик «4/9» справа — только если слайдов больше одного. */
 function counterText(env) {
-  return env.total > 1 ? `${env.index + 1}/${env.total}` : '';
+  return env.total > 1 && env.show('counter') ? `${env.index + 1}/${env.total}` : '';
 }
 
 /*
@@ -184,15 +209,27 @@ function photoBand(env, top, bottom, x = 80, w = 920) {
   return true;
 }
 
-/* Фоны, разрешённые для универсальных слайдов (текст, факты, подборка). */
+/*
+ * Темы фона по палитре брендбука. Универсальные слайды выбирают из первых
+ * пяти, обложки — из всех (блок «Оформление»). На Lime и Coral текст только
+ * Ink, акцент тоже Ink. accent — цвет выделения и крупных чисел.
+ */
 const SURFACES = {
-  paper: { bg: C.paper, text: C.ink, sub: C.slate, title: C.ink, marker: C.blue, line: C.ink, thin: C.mist, card: C.white, logo: 'main', surface: 'light', hatch: HATCH_LIGHT },
-  white: { bg: C.white, text: C.ink, sub: C.slate, title: C.ink, marker: C.blue, line: C.ink, thin: C.mist, card: C.paper, logo: 'main', surface: 'light', hatch: HATCH_LIGHT },
-  skyTint: { bg: C.skyTint, text: C.ink, sub: C.slate, title: C.blue, marker: C.blue, line: C.ink, thin: C.sky, card: C.white, logo: 'main', surface: 'light', hatch: HATCH_LIGHT },
-  blue: { bg: C.blue, text: C.white, sub: C.skyTint, title: C.white, marker: C.white, line: C.white, thin: 'rgba(255,255,255,0.35)', card: C.white, logo: 'onBlue', surface: 'blue', hatch: HATCH_DARK },
-  ink: { bg: C.ink, text: C.white, sub: C.mistDark, title: C.white, marker: C.lime, line: C.white, thin: C.graphite, card: C.graphite, logo: 'onDark', surface: 'ink', hatch: HATCH_INK },
+  paper: { bg: C.paper, text: C.ink, sub: C.slate, title: C.ink, marker: C.blue, line: C.ink, thin: C.mist, card: C.white, logo: 'main', surface: 'light', hatch: HATCH_LIGHT, accent: C.blue, dark: false },
+  white: { bg: C.white, text: C.ink, sub: C.slate, title: C.ink, marker: C.blue, line: C.ink, thin: C.mist, card: C.paper, logo: 'main', surface: 'light', hatch: HATCH_LIGHT, accent: C.blue, dark: false },
+  skyTint: { bg: C.skyTint, text: C.ink, sub: C.slate, title: C.blue, marker: C.blue, line: C.ink, thin: C.sky, card: C.white, logo: 'main', surface: 'light', hatch: HATCH_LIGHT, accent: C.blue, dark: false },
+  sky: { bg: C.sky, text: C.ink, sub: C.graphite, title: C.ink, marker: C.ink, line: C.ink, thin: 'rgba(18,20,24,0.18)', card: C.white, logo: 'main', surface: 'light', hatch: HATCH_LIGHT, accent: C.blue, dark: false },
+  lime: { bg: C.lime, text: C.ink, sub: C.graphite, title: C.ink, marker: C.ink, line: C.ink, thin: 'rgba(18,20,24,0.18)', card: C.white, logo: 'main', surface: 'light', hatch: HATCH_LIGHT, accent: C.ink, dark: false },
+  coral: { bg: C.coral, text: C.ink, sub: C.ink, title: C.ink, marker: C.ink, line: C.ink, thin: 'rgba(18,20,24,0.2)', card: C.white, logo: 'main', surface: 'light', hatch: HATCH_LIGHT, accent: C.ink, dark: false },
+  blue: { bg: C.blue, text: C.white, sub: C.skyTint, title: C.white, marker: C.white, line: C.white, thin: 'rgba(255,255,255,0.35)', card: C.white, logo: 'onBlue', surface: 'blue', hatch: HATCH_DARK, accent: C.lime, dark: true },
+  ink: { bg: C.ink, text: C.white, sub: C.mistDark, title: C.white, marker: C.lime, line: C.white, thin: C.graphite, card: C.graphite, logo: 'onDark', surface: 'ink', hatch: HATCH_INK, accent: C.lime, dark: true },
 };
 const SURFACE_CHOICES = [['paper', 'Paper'], ['white', 'Белый'], ['skyTint', 'Sky Tint'], ['blue', 'Bridge Blue'], ['ink', 'Ink']];
+/* Фоны обложек — вся палитра брендбука. */
+const COVER_BG_CHOICES = [
+  ['paper', 'Paper'], ['white', 'Белый'], ['skyTint', 'Sky Tint'], ['sky', 'Sky'],
+  ['lime', 'Lime'], ['coral', 'Coral'], ['blue', 'Bridge Blue'], ['ink', 'Ink'],
+];
 const LIGHT_SURFACE_CHOICES = SURFACE_CHOICES.slice(0, 3);
 
 /* Верхняя строка универсального слайда: плашка рубрики (с флагами) слева, счётчик справа. Возвращает её высоту. */
@@ -219,7 +256,7 @@ function topRow(ctx, env, d, sf) {
 function bottomRow(ctx, env, sf) {
   const y = env.H - 80 - 44;
   const lw = env.logo(80, y, 44, sf.logo, 'left', 760);
-  if (env.total > 1) {
+  if (env.total > 1 && env.show('counter')) {
     const n = env.total, gap = 10;
     const room = 920 - lw - 40;
     const segW = Math.min(40, (room - gap * (n - 1)) / n);
@@ -268,6 +305,8 @@ const KINDS = {};
 KINDS.newsCover = {
   name: 'Обложка новости',
   format: 'post',
+  bg: 'white',
+  subtitle: 'title',
   tune: { title: 'Заголовок' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка рубрики', sample: 'Новости' },
@@ -278,23 +317,24 @@ KINDS.newsCover = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.white);
+    const th = env.cover();
     let y = 80;
-    const pill = env.pill(80, y, 'news', 'light', { text: d.pill });
-    if (d.date) {
+    const pill = env.pill(80, y, 'news', th.surface, { text: d.pill });
+    const rowH = Math.max(pill.h, d.date ? 30 : 0);
+    if (d.date && env.show('meta')) {
       const st = S('onest', 500, 30, 1);
-      drawLine(ctx, d.date, 1000 - textWidth(ctx, d.date, st), y + (pill.h - 30) / 2, st, { color: C.slate });
+      drawLine(ctx, d.date, 1000 - textWidth(ctx, d.date, st), y + (rowH - 30) / 2, st, { color: th.sub });
     }
-    y += pill.h + 48;
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 76, 1.1, -0.03)), 920);
+    y += rowH ? rowH + 48 : 0;
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 76, 1.1, -0.03)), 920), 920);
     env.lines(title, 3, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.ink });
+    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     y += title.h + 48;
     const footY = H - 80 - 44;
     const photoH = footY - 48 - y;
     env.minSpace(photoH, 200, 'Для фото почти не осталось места — сократи заголовок');
-    env.photo('photo', 80, y, 920, Math.max(0, photoH), { radius: 32, placeholder: HATCH_LIGHT });
-    footerRow(ctx, env, footY, 'main', d.source, C.slate);
+    env.photo('photo', 80, y, 920, Math.max(0, photoH), { radius: 32, placeholder: th.hatch });
+    footerRow(ctx, env, footY, th.logo, d.source, th.sub);
   },
 };
 
@@ -302,6 +342,7 @@ KINDS.newsCover = {
 KINDS.storyCover = {
   name: 'Обложка истории',
   format: 'post',
+  subtitle: 'title',
   tune: { title: 'Цитата-заголовок' },
   fields: [
     { key: 'photo', type: 'media', label: 'Портрет героя', video: true, hint: 'Портрет 4:5: глаза на верхней трети, низ кадра — под текст' },
@@ -321,9 +362,9 @@ KINDS.storyCover = {
     }
     const logoY = H - 80 - 44;
     env.logo(80, logoY, 44, 'monoWhite', 'left', 920);
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.1, -0.03)), 920);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.1, -0.03)), 920), 920);
     env.lines(title, 2, 'Цитата-заголовок');
-    const titleY = logoY - 32 - title.h;
+    const titleY = (env.logoWidth(44) ? logoY - 32 : H - 80) - title.h;
     title.draw(ctx, 80, titleY, { color: C.white });
     if (d.hero) drawLine(ctx, d.hero, 80, titleY - 32 - 36, S('onest', 600, 36, 1), { color: C.lime });
   },
@@ -333,6 +374,7 @@ KINDS.storyCover = {
 KINDS.storyInner = {
   name: 'Вопрос и ответ',
   format: 'post',
+  subtitle: 'question',
   tune: { title: 'Вопрос', body: 'Ответ' },
   fields: [
     { key: 'avatar', type: 'media', label: 'Аватар героя', hint: 'Круг 96 px' },
@@ -354,9 +396,9 @@ KINDS.storyInner = {
       drawLine(ctx, counter, 1000 - textWidth(ctx, counter, st), 80 + 33, st, { color: C.slate });
     }
     let y = 80 + 96 + 40;
-    const q = layoutText(ctx, d.question, env.t('title', S('onest', 700, 60, 1.12, -0.02)), 920);
+    const q = titled(ctx, env, d, layoutText(ctx, d.question, env.t('title', S('onest', 700, 60, 1.12, -0.02)), 920), 920);
     env.lines(q, 4, 'Вопрос');
-    q.draw(ctx, 80, y, { color: C.blue });
+    q.draw(ctx, 80, y, { color: C.blue, subColor: C.slate });
     y += q.h + 40;
     const a = layoutText(ctx, d.answer, env.t('body', S('onest', 400, 38, 1.42)), 920);
     env.lines(a, 99, 'Ответ');
@@ -371,6 +413,7 @@ KINDS.storyInner = {
 KINDS.quote = {
   name: 'Цитата героя',
   format: 'post',
+  bg: 'sky',
   tune: { title: 'Цитата' },
   fields: [
     { key: 'quote', type: 'textarea', label: 'Цитата', hint: 'До 5 строк, без кавычек — кавычка уже в макете', sample: 'Я поступила не потому, что была лучшей, а потому что была честной в эссе' },
@@ -381,27 +424,29 @@ KINDS.quote = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.sky);
-    drawLine(ctx, '«', 80, 80, S('unb', 600, 200, 0.6), { color: C.blue });
-    const qw = textWidth(ctx, '«', S('unb', 600, 200, 0.6));
-    const qfw = env.drawFlags(80 + qw + 24, 80 + 16, 88);
-    env.collab(1000, 80 + 38, 44, 'main', 'right', 920 - qw - 24 - (qfw ? qfw + 40 : 16));
+    const th = env.cover();
+    const markColor = th.bg === C.blue ? C.white : th.bg === C.ink ? C.lime : th.accent === C.ink ? C.ink : C.blue;
+    const qw = env.show('decor') ? textWidth(ctx, '«', S('unb', 600, 200, 0.6)) : 0;
+    if (qw) drawLine(ctx, '«', 80, 80, S('unb', 600, 200, 0.6), { color: markColor });
+    const qx = qw ? 80 + qw + 24 : 80;
+    const qfw = env.drawFlags(qx, 80 + 16, 88);
+    env.collab(1000, 80 + 38, 44, th.logo, 'right', 1000 - qx - (qfw ? qfw + 40 : 16));
     const rowY = H - 80 - 120;
     env.photo('avatar', 80, rowY, 120, 120, { shape: 'circle', placeholder: ['#8A909C', '#A7ACB6', 3, 18] });
     const tx = 80 + 120 + 28;
-    drawLine(ctx, d.name, tx, rowY + 22, S('onest', 700, 36, 1), { color: C.ink });
-    drawLine(ctx, d.meta, tx, rowY + 22 + 36 + 10, S('onest', 500, 30, 1), { color: C.ink });
+    drawLine(ctx, d.name, tx, rowY + 22, S('onest', 700, 36, 1), { color: th.text });
+    drawLine(ctx, d.meta, tx, rowY + 22 + 36 + 10, S('onest', 500, 30, 1), { color: th.text });
     const q = layoutText(ctx, d.quote, env.t('title', S('unb', 600, 70, 1.15, -0.03)), 920);
     env.lines(q, 5, 'Цитата');
     const top = 80 + 120;
     if (env.media('photo')) {
-      q.draw(ctx, 80, top, { color: C.ink });
+      q.draw(ctx, 80, top, { color: th.title });
       photoBand(env, top + q.h + 40, rowY - 40);
       return;
     }
     const free = rowY - top - q.h;
     env.minSpace(free, 40, 'Цитата не помещается — сократи её');
-    q.draw(ctx, 80, top + Math.max(0, free) / 2, { color: C.ink });
+    q.draw(ctx, 80, top + Math.max(0, free) / 2, { color: th.title });
   },
 };
 
@@ -409,6 +454,7 @@ KINDS.quote = {
 KINDS.uniCover = {
   name: 'Профиль университета',
   format: 'post',
+  bg: 'blue',
   tune: { title: 'Название', value: 'Факты' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка рубрики', sample: 'Университеты' },
@@ -434,18 +480,18 @@ KINDS.uniCover = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
-    env.bgPhoto('photo', C.blue, 0.78);
-    const pm = env.pillSize('uni', 'blue', { text: d.pill });
+    const th = env.cover();
+    env.bgPhoto('photo', th.bg, 0.78);
+    const pm = env.pillSize('uni', th.surface, { text: d.pill });
     const rowH = 88;
-    env.pill(80, 80 + (rowH - pm.h) / 2, 'uni', 'blue', { text: d.pill });
+    env.pill(80, 80 + (rowH - pm.h) / 2, 'uni', th.surface, { text: d.pill });
     drawFlag(ctx, d.flag, 1000 - 88, 80, 88);
     let y = 80 + rowH + 40;
     const name = layoutText(ctx, d.name, env.t('title', S('unb', 600, 88, 1.05, -0.03)), 920);
     env.lines(name, 2, 'Название');
-    name.draw(ctx, 80, y, { color: C.white });
+    name.draw(ctx, 80, y, { color: th.title });
     y += name.h + 20;
-    drawLine(ctx, d.city, 80, y, S('onest', 500, 36, 1), { color: C.skyTint });
+    drawLine(ctx, d.city, 80, y, S('onest', 500, 36, 1), { color: th.sub });
     y += 36 + 40;
     const footY = H - 80 - 44;
     const gridH = footY - 40 - y;
@@ -456,12 +502,13 @@ KINDS.uniCover = {
       const cx = 80 + (i % 2) * (cw + 20);
       const cy = y + Math.floor(i / 2) * (ch + 20);
       const hot = i === 3;
-      fillRR(ctx, cx, cy, cw, ch, 28, hot ? C.coral : C.white);
-      drawLine(ctx, f.label, cx + 32, cy + 32, S('onest', 500, 28, 1), { color: hot ? C.ink : C.slate });
+      fillRR(ctx, cx, cy, cw, ch, 28, hot ? (th.bg === C.coral ? C.ink : C.coral) : (th.bg === C.white ? C.paper : C.white));
+      const onInk = hot && th.bg === C.coral;
+      drawLine(ctx, f.label, cx + 32, cy + 32, S('onest', 500, 28, 1), { color: onInk ? C.mistDark : hot ? C.ink : C.slate });
       const vst = fitSize(ctx, f.value || '', env.t('value', S('unb', 600, 56, 1)), cw - 64, 30);
-      drawLine(ctx, f.value, cx + 32, cy + ch - 32 - vst.size, vst, { color: C.ink });
+      drawLine(ctx, f.value, cx + 32, cy + ch - 32 - vst.size, vst, { color: onInk ? C.white : C.ink });
     });
-    footerRow(ctx, env, footY, 'onBlue', d.source, C.white);
+    footerRow(ctx, env, footY, th.logo, d.source, th.dark ? C.white : th.sub);
   },
 };
 
@@ -469,6 +516,7 @@ KINDS.uniCover = {
 KINDS.factsSlide = {
   name: 'Факты списком',
   format: 'post',
+  subtitle: 'title',
   tune: { title: 'Заголовок', value: 'Значения' },
   fields: [
     { key: 'bg', type: 'select', label: 'Фон', options: SURFACE_CHOICES, sample: 'paper' },
@@ -497,9 +545,9 @@ KINDS.factsSlide = {
     const th = topRow(ctx, env, d, sf);
     let y = 80 + (th ? th + 48 : 0);
     if (d.title) {
-      const title = layoutText(ctx, d.title, env.t('title', S('onest', 800, 72, 1.1, -0.02)), 920);
+      const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 800, 72, 1.1, -0.02)), 920), 920);
       env.lines(title, 3, 'Заголовок');
-      title.draw(ctx, 80, y, { color: sf.title });
+      title.draw(ctx, 80, y, { color: sf.title, subColor: sf.sub });
       y += title.h + 40;
     }
     const vst = env.t('value', S('onest', 700, 44, 1.2));
@@ -523,6 +571,7 @@ KINDS.factsSlide = {
 KINDS.textSlide = {
   name: 'Текст',
   format: 'post',
+  subtitle: 'title',
   tune: { title: 'Заголовок', body: 'Текст' },
   fields: [
     { key: 'bg', type: 'select', label: 'Фон', options: SURFACE_CHOICES, sample: 'paper' },
@@ -539,9 +588,9 @@ KINDS.textSlide = {
     const th = topRow(ctx, env, d, sf);
     let y = 80 + (th ? th + 48 : 0);
     if (d.title) {
-      const title = layoutText(ctx, d.title, env.t('title', S('onest', 800, 72, 1.1, -0.02)), 920);
+      const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 800, 72, 1.1, -0.02)), 920), 920);
       env.lines(title, 3, 'Заголовок');
-      title.draw(ctx, 80, y, { color: sf.title });
+      title.draw(ctx, 80, y, { color: sf.title, subColor: sf.sub });
       y += title.h + 40;
     }
     const body = layoutBody(ctx, d.body, env.t('body', S('onest', 400, 38, 1.42)), 920);
@@ -570,6 +619,8 @@ const SPEAKER_COUNT = { key: 'count', type: 'select', label: 'Сколько с�
 KINDS.webinar = {
   name: 'Анонс вебинара',
   format: 'post',
+  bg: 'ink',
+  subtitle: 'topic',
   tune: { title: 'Тема', body: 'Темы эфира', name: 'Спикеры' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка', sample: 'Вебинар' },
@@ -590,42 +641,43 @@ KINDS.webinar = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.ink);
-    const pill = env.pill(80, 80, 'webinar', 'ink', { text: d.pill || undefined });
-    env.logo(1000, 80 + (pill.h - 44) / 2, 44, 'onDark', 'right', 920 - pill.w - 40);
-    const top = 80 + pill.h + 40;
+    const th = env.cover();
+    const ph = th.dark ? HATCH_INK : HATCH_LIGHT;
+    const pill = env.pill(80, 80, 'webinar', th.surface, { text: d.pill || undefined });
+    env.logo(1000, 80 + (Math.max(pill.h, 44) - 44) / 2, 44, th.logo, 'right', 920 - (pill.w ? pill.w + 40 : 0));
+    const top = 80 + Math.max(pill.h, 44) + 40;
     const rowH = 80 + 12 + 36;
     const rowY = H - 80 - rowH;
-    drawLine(ctx, d.date, 80, rowY, S('unb', 600, 80, 1), { color: C.lime });
-    drawLine(ctx, d.time, 80, rowY + 80 + 12, S('onest', 500, 36, 1), { color: C.white });
-    if (d.cta) {
+    drawLine(ctx, d.date, 80, rowY, S('unb', 600, 80, 1), { color: th.accent });
+    drawLine(ctx, d.time, 80, rowY + 80 + 12, S('onest', 500, 36, 1), { color: th.text });
+    if (d.cta && env.show('cta')) {
       const cm = pillMetrics(ctx, d.cta, { size: 30, weight: 700, padX: 36, padY: 24 });
-      drawPill(ctx, 1000 - cm.w, rowY + rowH - cm.h, d.cta, { size: 30, weight: 700, padX: 36, padY: 24, bg: C.white, color: C.ink });
+      drawPill(ctx, 1000 - cm.w, rowY + rowH - cm.h, d.cta, Object.assign({ size: 30, weight: 700, padX: 36, padY: 24 }, th.dark ? { bg: C.white, color: C.ink } : { bg: C.ink, color: C.white }));
     }
     let y = rowY - 40;
     const topics = (d.topics || []).map(t => (t.text || '').trim()).filter(Boolean);
     if (topics.length) {
       const body = layoutBody(ctx, topics.map(t => '- ' + t).join('\n'), env.t('body', S('onest', 500, 34, 1.3)), 920);
       y -= body.h;
-      body.draw(ctx, 80, y, C.white, C.lime);
+      body.draw(ctx, 80, y, th.text, th.dark ? C.lime : th.marker);
       y -= 28;
     }
-    const topic = layoutText(ctx, d.topic, env.t('title', S('onest', 700, 52, 1.15)), 920);
+    const topic = titled(ctx, env, d, layoutText(ctx, d.topic, env.t('title', S('onest', 700, 52, 1.15)), 920), 920, { subMax: 34 });
     env.lines(topic, 2, 'Тема');
     y -= topic.h;
-    topic.draw(ctx, 80, y, { color: C.white });
+    topic.draw(ctx, 80, y, { color: th.text, subColor: th.sub });
     const areaBottom = y - 40;
     const areaH = areaBottom - top;
     const n = clampCount(d.count);
     if (n === 1) {
       env.minSpace(areaH, 300, 'Фото спикера почти не видно — сократи тему или тезисы');
-      env.photo('photo', 80, top, 400, Math.max(0, areaH), { shape: 'arch', placeholder: HATCH_INK });
+      env.photo('photo', 80, top, 400, Math.max(0, areaH), { shape: 'arch', placeholder: ph });
       const colX = 80 + 400 + 40, colW = 1000 - colX;
       const role = layoutText(ctx, d.role, S('onest', 400, 32, 1.3), colW);
       const name = layoutText(ctx, d.speaker, env.t('name', S('onest', 700, 48, 1.1)), colW);
       const colBottom = top + Math.max(0, areaH);
-      role.draw(ctx, colX, colBottom - role.h, { color: C.mistDark });
-      name.draw(ctx, colX, colBottom - role.h - 20 - name.h, { color: C.white });
+      role.draw(ctx, colX, colBottom - role.h, { color: th.sub });
+      name.draw(ctx, colX, colBottom - role.h - 20 - name.h, { color: th.text });
       return;
     }
     const gap = 32;
@@ -642,10 +694,10 @@ KINDS.webinar = {
     const archTop = areaBottom - textH - 24 - Math.max(0, archH);
     people.forEach((p, i) => {
       const x = 80 + i * (w + gap);
-      env.photo(p.key, x, archTop, w, Math.max(0, archH), { shape: 'arch', placeholder: HATCH_INK });
+      env.photo(p.key, x, archTop, w, Math.max(0, archH), { shape: 'arch', placeholder: ph });
       const ty = archTop + Math.max(0, archH) + 24;
-      p.name.draw(ctx, x, ty, { color: C.white });
-      p.role.draw(ctx, x, ty + p.name.h + 10, { color: C.mistDark });
+      p.name.draw(ctx, x, ty, { color: th.text });
+      p.role.draw(ctx, x, ty + p.name.h + 10, { color: th.sub });
     });
   },
 };
@@ -658,6 +710,8 @@ function clampCount(v) {
 KINDS.deadlines = {
   name: 'Дедлайны и гранты',
   format: 'post',
+  bg: 'paper',
+  subtitle: 'title',
   tune: { title: 'Заголовок', body: 'Строки' },
   fields: [
     { key: 'pills', type: 'select', label: 'Плашки', options: [['both', 'Дедлайн + Гранты'], ['deadline', 'Только «Дедлайн»'], ['grants', 'Только «Гранты»']], sample: 'both' },
@@ -681,30 +735,31 @@ KINDS.deadlines = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.paper);
+    const th = env.cover();
     let x = 80, pillH = 0;
-    if (d.pills !== 'grants') { const p = env.pill(x, 80, 'deadline', 'light'); x += p.w + 16; pillH = p.h; }
-    if (d.pills !== 'deadline') { const p = env.pill(x, 80, 'grants', 'light', { noFlags: d.pills === 'both' }); pillH = p.h; }
-    let y = 80 + pillH + 36;
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 84, 1.05, -0.03)), 920);
+    if (d.pills !== 'grants') { const p = env.pill(x, 80, 'deadline', th.surface); x += p.w ? p.w + 16 : 0; pillH = p.h; }
+    if (d.pills !== 'deadline') { const p = env.pill(x, 80, 'grants', th.surface, { noFlags: d.pills === 'both' }); pillH = Math.max(pillH, p.h); }
+    let y = 80 + (pillH ? pillH + 36 : 0);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 84, 1.05, -0.03)), 920), 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.ink });
+    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     y += title.h + 36;
     const pst = env.t('body', S('onest', 600, 38, 1.2));
     const dst = S('unb', 600, Math.round(44 * pst.size / 38), 1);
     (d.rows || []).forEach((r, i) => {
       const bw = i === 0 ? 3 : 2;
-      fillRect(ctx, 80, y, 920, bw, i === 0 ? C.ink : C.mist);
+      fillRect(ctx, 80, y, 920, bw, i === 0 ? th.line : th.thin);
       y += bw + 28;
       const prog = layoutText(ctx, r.program, pst, 920 - 170 - 32);
       const rowH = Math.max(dst.size, prog.h);
-      drawLine(ctx, r.date, 80, y + (rowH - dst.size) / 2, dst, { color: i === 0 && d.hot ? C.coralText : C.ink });
-      prog.draw(ctx, 80 + 170 + 32, y + (rowH - prog.h) / 2, { color: C.ink });
+      const hotColor = th.dark ? C.coral : th.bg === C.coral || th.bg === C.lime ? C.ink : C.coralText;
+      drawLine(ctx, r.date, 80, y + (rowH - dst.size) / 2, dst, { color: i === 0 && d.hot ? hotColor : th.text });
+      prog.draw(ctx, 80 + 170 + 32, y + (rowH - prog.h) / 2, { color: th.text });
       y += rowH + 28;
     });
     const footY = H - 80 - 44;
     if (!photoBand(env, y + 8, footY - 36)) env.fits(y, footY - 36, 'Строки не помещаются — оставь до 6 сроков или сократи названия');
-    footerRow(ctx, env, footY, 'main', d.source, C.slate);
+    footerRow(ctx, env, footY, th.logo, d.source, th.sub);
   },
 };
 
@@ -712,6 +767,8 @@ KINDS.deadlines = {
 KINDS.guideCover = {
   name: 'Обложка гайда',
   format: 'post',
+  bg: 'paper',
+  subtitle: 'title',
   tune: { title: 'Заголовок' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка рубрики', sample: 'Гайд' },
@@ -721,28 +778,29 @@ KINDS.guideCover = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.paper);
-    const pill = env.pill(80, 80, 'guide', 'light', { text: d.pill });
+    const th = env.cover();
+    const pill = env.pill(80, 80, 'guide', th.surface, { text: d.pill });
     const footY = H - 80 - 44;
-    const lw = env.logo(80, footY, 44, 'main', 'left', 760);
-    if (d.swipe) {
+    const lw = env.logo(80, footY, 44, th.logo, 'left', 760);
+    if (d.swipe && env.show('meta')) {
       const st = S('onest', 600, 32, 1);
       const tw = textWidth(ctx, d.swipe, st);
       if (lw + 40 + tw > 920) env.warn('Подпись внизу наезжает на логотипы — сократи её');
-      drawLine(ctx, d.swipe, 1000 - tw, footY + 6, st, { color: C.ink });
+      drawLine(ctx, d.swipe, 1000 - tw, footY + 6, st, { color: th.text });
     }
     const hasPhoto = Boolean(env.media('photo'));
-    const arcW = hasPhoto ? 200 : 300;
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, hasPhoto ? 88 : 104, 1.05, -0.03)), 920);
+    const arcW = env.show('decor') ? (hasPhoto ? 200 : 300) : 0;
+    const arcH = arcW ? arcHeight(arcW) + 40 : 0;
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, hasPhoto ? 88 : 104, 1.05, -0.03)), 920), 920);
     env.lines(title, 4, 'Заголовок');
-    const blockH = arcHeight(arcW) + 40 + title.h;
+    const blockH = arcH + title.h;
     const top = 80 + pill.h;
     const free = footY - top - blockH;
     env.minSpace(free, 40, 'Заголовок не помещается — сократи его');
     let y = hasPhoto ? top + 48 : top + Math.max(0, free) / 2;
-    drawArc(ctx, 80, y, arcW, C.blue);
-    y += arcHeight(arcW) + 40;
-    title.draw(ctx, 80, y, { color: C.ink });
+    if (arcW) drawArc(ctx, 80, y, arcW, th.dark ? C.lime : th.accent === C.ink ? C.ink : C.blue);
+    y += arcH;
+    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     if (hasPhoto) photoBand(env, y + title.h + 48, footY - 48);
   },
 };
@@ -751,6 +809,7 @@ KINDS.guideCover = {
 KINDS.guideStep = {
   name: 'Шаг гайда',
   format: 'post',
+  subtitle: 'title',
   tune: { title: 'Действие', body: 'Пояснение' },
   fields: [
     { key: 'num', type: 'text', label: 'Номер шага', hint: 'Пусто — по порядку среди шагов' },
@@ -769,15 +828,15 @@ KINDS.guideStep = {
     env.drawFlags(80 + 240 + 32, 80 + 240 - 72, 72);
     env.collab(1000, 80, 44, 'main', 'right', 920 - 240 - 40);
     let y = 80 + 240 + 48;
-    const title = layoutText(ctx, d.title, env.t('title', S('onest', 700, 72, 1.1, -0.02)), 920);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 700, 72, 1.1, -0.02)), 920), 920);
     env.lines(title, 3, 'Действие');
-    title.draw(ctx, 80, y, { color: C.ink });
+    title.draw(ctx, 80, y, { color: C.ink, subColor: C.slate });
     y += title.h + 48;
     const body = layoutBody(ctx, d.body, env.t('body', S('onest', 400, 40, 1.42)), 920);
     body.draw(ctx, 80, y, C.graphite, C.blue);
     y += body.h;
     const barY = H - 80 - 10;
-    if (env.total > 1) drawProgress(ctx, 80, barY, 920, env.total, env.index + 1, { h: 10, gap: 10 });
+    if (env.total > 1 && env.show('counter')) drawProgress(ctx, 80, barY, 920, env.total, env.index + 1, { h: 10, gap: 10 });
     if (!photoBand(env, y + 40, barY - 48)) env.fits(y, barY - 48, 'Пояснение не помещается — сократи текст');
   },
 };
@@ -786,6 +845,7 @@ KINDS.guideStep = {
 KINDS.guideMistakes = {
   name: 'Частые ошибки',
   format: 'post',
+  subtitle: 'title',
   tune: { title: 'Заголовок', body: 'Пункты' },
   fields: [
     { key: 'title', type: 'textarea', label: 'Заголовок', sample: 'Частые ошибки' },
@@ -806,9 +866,9 @@ KINDS.guideMistakes = {
     fillRect(ctx, 0, 0, W, H, C.ink);
     const fw = env.drawFlags(1000, 80, 72, 'right');
     let y = 80;
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 88, 1.05, -0.03)), fw ? 920 - fw - 24 : 920);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 88, 1.05, -0.03)), fw ? 920 - fw - 24 : 920), fw ? 920 - fw - 24 : 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.coral });
+    title.draw(ctx, 80, y, { color: C.coral, subColor: C.mistDark });
     y += title.h + 48;
     const st = env.t('body', S('onest', 500, 44, 1.3));
     const markW = textWidth(ctx, '× ', st);
@@ -828,6 +888,7 @@ KINDS.guideMistakes = {
 KINDS.guideChecklist = {
   name: 'Чек-лист',
   format: 'post',
+  subtitle: 'title',
   tune: { title: 'Заголовок', body: 'Пункты' },
   fields: [
     { key: 'title', type: 'textarea', label: 'Заголовок', sample: 'Чек-лист' },
@@ -851,9 +912,9 @@ KINDS.guideChecklist = {
     fillRect(ctx, 0, 0, W, H, C.skyTint);
     const fw = env.drawFlags(1000, 80, 72, 'right');
     let y = 80;
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 88, 1.05, -0.03)), fw ? 920 - fw - 24 : 920);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 88, 1.05, -0.03)), fw ? 920 - fw - 24 : 920), fw ? 920 - fw - 24 : 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.blue });
+    title.draw(ctx, 80, y, { color: C.blue, subColor: C.slate });
     y += title.h + 44;
     const st = env.t('body', S('onest', 500, 44, 1.3));
     (d.items || []).forEach((it, i) => {
@@ -879,6 +940,8 @@ KINDS.guideChecklist = {
 KINDS.guideFinal = {
   name: 'Финал: сохрани',
   format: 'post',
+  bg: 'blue',
+  subtitle: 'title',
   tune: { title: 'Призыв' },
   fields: [
     { key: 'title', type: 'textarea', label: 'Призыв', sample: 'Сохрани, чтобы вернуться к гайду' },
@@ -887,20 +950,26 @@ KINDS.guideFinal = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
-    env.bgPhoto('photo', C.blue, 0.72);
-    drawArc(ctx, 80, 80, 360, C.white);
-    env.drawFlags(80 + 360 + 40, 80 + arcHeight(360) - 72, 72);
-    env.collab(1000, 80, 44, 'onBlue', 'right', 920 - 360 - 40);
+    const th = env.cover();
+    env.bgPhoto('photo', th.bg, 0.72);
+    const deco = env.show('decor');
+    const arcW = deco ? 360 : 0;
+    const mark = th.dark ? C.white : th.accent === C.ink ? C.ink : C.blue;
+    if (deco) drawArc(ctx, 80, 80, 360, mark);
+    const flagX = deco ? 80 + 360 + 40 : 80;
+    const fw = env.drawFlags(flagX, 80 + (deco ? arcHeight(360) - 72 : 0), 72);
+    env.collab(1000, 80, 44, th.logo, 'right', 1000 - (fw ? flagX + fw + 40 : flagX));
     const rowY = H - 80 - 96;
-    drawLine(ctx, d.handle, 80, rowY + 28, S('onest', 600, 40, 1), { color: C.white });
-    drawGlyph(ctx, 'bookmark-simple', 1000 - 96, rowY, 96, C.white);
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 96, 1.08, -0.03)), 920);
+    if (env.show('meta')) {
+      drawLine(ctx, d.handle, 80, rowY + 28, S('onest', 600, 40, 1), { color: th.text });
+      drawGlyph(ctx, 'bookmark-simple', 1000 - 96, rowY, 96, mark);
+    }
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 96, 1.08, -0.03)), 920), 920);
     env.lines(title, 4, 'Призыв');
-    const top = 80 + arcHeight(360);
+    const top = 80 + (deco ? arcHeight(360) : fw ? 72 : 0);
     const free = rowY - top - title.h;
     env.minSpace(free, 40, 'Призыв не помещается — сократи его');
-    title.draw(ctx, 80, top + Math.max(0, free) / 2, { color: C.white });
+    title.draw(ctx, 80, top + Math.max(0, free) / 2, { color: th.title, subColor: th.sub });
   },
 };
 
@@ -908,6 +977,7 @@ KINDS.guideFinal = {
 KINDS.number = {
   name: 'Цифра',
   format: 'post',
+  bg: 'blue',
   tune: { number: 'Число', title: 'Пояснение' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка рубрики', sample: 'Цифры' },
@@ -918,11 +988,11 @@ KINDS.number = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
-    env.bgPhoto('photo', C.blue, 0.74);
-    const pill = env.pill(80, 80, 'numbers', 'blue', { text: d.pill });
+    const th = env.cover();
+    env.bgPhoto('photo', th.bg, 0.74);
+    const pill = env.pill(80, 80, 'numbers', th.surface, { text: d.pill });
     const footY = H - 80 - 44;
-    footerRow(ctx, env, footY, 'onBlue', d.source, C.white);
+    footerRow(ctx, env, footY, th.logo, d.source, th.dark ? C.white : th.sub);
     const nBase = env.t('number', S('unb', 600, 260, 0.9, -0.05));
     const nst = fitSize(ctx, d.number || '', nBase, 920, Math.round(nBase.size * 0.77));
     const num = layoutText(ctx, d.number, nst, 920);
@@ -934,9 +1004,9 @@ KINDS.number = {
     const free = footY - top - blockH;
     env.minSpace(free, 40, 'Текст не помещается');
     let y = top + Math.max(0, free) / 2;
-    num.draw(ctx, 80, y, { color: C.white });
+    num.draw(ctx, 80, y, { color: th.dark ? C.white : th.accent });
     y += num.h + 36;
-    txt.draw(ctx, 80, y, { color: C.white });
+    txt.draw(ctx, 80, y, { color: th.text });
   },
 };
 
@@ -944,6 +1014,8 @@ KINDS.number = {
 KINDS.compare = {
   name: 'Сравнение',
   format: 'post',
+  bg: 'white',
+  subtitle: 'title',
   noFlags: true,   // флаги тут — сама суть макета, отдельное поле не нужно
   tune: { title: 'Заголовок', value: 'Значения' },
   fields: [
@@ -967,11 +1039,11 @@ KINDS.compare = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.white);
+    const th = env.cover();
     let y = 80;
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.08, -0.03)), 920);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.08, -0.03)), 920), 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.ink });
+    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     y += title.h + 40;
     const colW = (920 - 40) / 2;
     const xs = [80, 80 + colW + 40];
@@ -984,14 +1056,14 @@ KINDS.compare = {
       const cells = [r.a, r.b].map(v => layoutText(ctx, v, vst, colW));
       const cellH = 28 + 10 + Math.max(vst.size * vst.lh, ...cells.map(c => c.h));
       xs.forEach((x, k) => {
-        fillRect(ctx, x, y, colW, bw, i === 0 ? C.ink : C.mist);
-        drawLine(ctx, r.label, x, y + bw + 24, S('onest', 500, 28, 1), { color: C.slate });
-        cells[k].draw(ctx, x, y + bw + 24 + 28 + 10, { color: C.ink });
+        fillRect(ctx, x, y, colW, bw, i === 0 ? th.line : th.thin);
+        drawLine(ctx, r.label, x, y + bw + 24, S('onest', 500, 28, 1), { color: th.sub });
+        cells[k].draw(ctx, x, y + bw + 24 + 28 + 10, { color: th.text });
       });
       y += bw + 24 + cellH + 24;
     });
     const logoY = H - 80 - 44;
-    env.logo(80, logoY, 44, 'main', 'left', 920);
+    env.logo(80, logoY, 44, th.logo, 'left', 920);
     if (!photoBand(env, y + 16, logoY - 40)) env.fits(y, logoY - 40, 'Строки не помещаются — оставь до 4–5 коротких');
   },
 };
@@ -1000,6 +1072,8 @@ KINDS.compare = {
 KINDS.partnerCover = {
   name: 'Партнёрский пост',
   format: 'post',
+  bg: 'white',
+  subtitle: 'title',
   tune: { title: 'Заголовок' },
   fields: [
     { key: 'pill', type: 'text', label: 'Пометка', hint: 'Обязательна на каждом оплаченном посте', sample: 'Партнёрский материал' },
@@ -1009,26 +1083,26 @@ KINDS.partnerCover = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.white);
-    const pill = env.pill(80, 80, 'partner', 'light', { text: d.pill });
-    let y = 80 + pill.h + 40;
+    const th = env.cover();
+    const pill = env.pill(80, 80, 'partner', th.surface, { text: d.pill });
+    let y = 80 + (pill.h ? pill.h + 40 : 0);
     if (env.hasCollab && !env.media('partnerLogo')) {
       // партнёры из «Коллаборации»: знак партнёра — та же раскладка ко-брендинга
-      env.logo(80, y + 14, 52, 'main', 'left', 920);
+      env.logo(80, y + 14, 52, th.logo, 'left', 920);
     } else {
-      const lw = drawLogo(ctx, 80, y + 14, 52, 'main');
-      const dx = 80 + lw + 40;
-      fillRect(ctx, dx, y, 3, 80, C.mistDark);
+      const lw = env.logoWidth(52) ? drawLogo(ctx, 80, y + 14, 52, th.logo) : 0;
+      const dx = lw ? 80 + lw + 40 : 80 - 43;
+      if (lw) fillRect(ctx, dx, y, 3, 80, th.dark ? 'rgba(255,255,255,0.4)' : C.mistDark);
       env.photo('partnerLogo', dx + 3 + 40, y, 240, 80, { fit: 'contain', placeholder: [C.mist, C.white, 3, 16] });
     }
     y += 80 + 40;
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 68, 1.1, -0.03)), 920);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 68, 1.1, -0.03)), 920), 920);
     env.lines(title, 4, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.ink });
+    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     y += title.h + 40;
     const photoH = H - 80 - y;
     env.minSpace(photoH, 200, 'Для фото почти не осталось места — сократи заголовок');
-    env.photo('photo', 80, y, 920, Math.max(0, photoH), { radius: 32, placeholder: HATCH_LIGHT });
+    env.photo('photo', 80, y, 920, Math.max(0, photoH), { radius: 32, placeholder: th.hatch });
   },
 };
 
@@ -1051,6 +1125,8 @@ function resourceCategories(env) {
 KINDS.resCover = {
   name: 'Обложка подборки',
   format: 'post',
+  bg: 'blue',
+  subtitle: 'title',
   tune: { number: 'Число', title: 'Заголовок' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка рубрики', sample: 'Подборка' },
@@ -1062,27 +1138,27 @@ KINDS.resCover = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
-    env.bgPhoto('photo', C.blue, 0.76);
-    const pill = env.pill(80, 80, 'resources', 'blue', { text: d.pill });
+    const th = env.cover();
+    env.bgPhoto('photo', th.bg, 0.76);
+    const pill = env.pill(80, 80, 'resources', th.surface, { text: d.pill });
     const footY = H - 80 - 44;
-    const lw = env.logo(80, footY, 44, 'onBlue', 'left', 760);
-    if (d.swipe) {
+    const lw = env.logo(80, footY, 44, th.logo, 'left', 760);
+    if (d.swipe && env.show('meta')) {
       const st = S('onest', 600, 32, 1);
       const tw = textWidth(ctx, d.swipe, st);
       if (lw + 40 + tw > 920) env.warn('Подпись внизу наезжает на логотипы — сократи её');
-      drawLine(ctx, d.swipe, 1000 - tw, footY + 6, st, { color: C.white });
+      drawLine(ctx, d.swipe, 1000 - tw, footY + 6, st, { color: th.text });
     }
-    let y = 80 + pill.h + 64;
+    let y = 80 + (pill.h ? pill.h + 64 : 0);
     if (d.number) {
       const nst = fitSize(ctx, d.number, env.t('number', S('unb', 600, 300, 0.9, -0.05)), 920, 140);
       const num = layoutText(ctx, d.number, nst, 920);
-      num.draw(ctx, 80, y, { color: C.lime });
+      num.draw(ctx, 80, y, { color: th.accent });
       y += num.h + 24;
     }
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.08, -0.03)), 920);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.08, -0.03)), 920), 920);
     env.lines(title, 4, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.white });
+    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     y += title.h;
     const cats = d.showCats === false ? [] : resourceCategories(env).slice(0, 6);
     if (cats.length) {
@@ -1104,9 +1180,9 @@ KINDS.resCover = {
           if (i >= cats.length) break;
           const cx = 80 + k * 470;
           const lh = rh - 20;
-          fillCircle(ctx, cx + 24, ry + lh / 2, 24, 'rgba(255,255,255,0.16)');
-          drawGlyph(ctx, cats[i].icon, cx + 10, ry + lh / 2 - 14, 28, C.lime);
-          laid[i].draw(ctx, cx + 64, ry + (lh - laid[i].h) / 2, { color: C.white });
+          fillCircle(ctx, cx + 24, ry + lh / 2, 24, th.dark ? 'rgba(255,255,255,0.16)' : 'rgba(18,20,24,0.08)');
+          drawGlyph(ctx, cats[i].icon, cx + 10, ry + lh / 2 - 14, 28, th.accent);
+          laid[i].draw(ctx, cx + 64, ry + (lh - laid[i].h) / 2, { color: th.text });
         }
         ry += rh;
       });
@@ -1120,6 +1196,7 @@ KINDS.resCover = {
 KINDS.resGroup = {
   name: 'Категория подборки',
   format: 'post',
+  subtitle: 'title',
   tune: { title: 'Категория', name: 'Названия', body: 'Описания' },
   fields: [
     { key: 'bg', type: 'select', label: 'Фон', options: LIGHT_SURFACE_CHOICES, sample: 'paper' },
@@ -1144,8 +1221,11 @@ KINDS.resGroup = {
     fillRect(ctx, 0, 0, W, H, sf.bg);
     // иконка рубрики — в круге Sky Tint диаметром 1,8× иконки (раздел «Иконки»)
     const circle = 104;
-    fillCircle(ctx, 80 + circle / 2, 80 + circle / 2, circle / 2, d.bg === 'skyTint' ? C.white : C.skyTint);
-    drawGlyph(ctx, d.icon || 'star', 80 + 23, 80 + 23, 58, C.blue);
+    const icon = env.show('decor');
+    if (icon) {
+      fillCircle(ctx, 80 + circle / 2, 80 + circle / 2, circle / 2, d.bg === 'skyTint' ? C.white : C.skyTint);
+      drawGlyph(ctx, d.icon || 'star', 80 + 23, 80 + 23, 58, C.blue);
+    }
     const counter = counterText(env);
     let cw = 0;
     const cst = S('onest', 500, 30, 1);
@@ -1154,11 +1234,11 @@ KINDS.resGroup = {
       drawLine(ctx, counter, 1000 - cw, 80 + (circle - 30) / 2, cst, { color: sf.sub });
     }
     const fw = env.drawFlags(1000 - (cw ? cw + 24 : 0), 80 + (circle - 56) / 2, 56, 'right');
-    const tx = 80 + circle + 28;
+    const tx = icon ? 80 + circle + 28 : 80;
     const tw = 1000 - tx - (cw ? cw + 24 : 0) - (fw ? fw + 24 : 0);
-    const title = layoutText(ctx, d.title, env.t('title', S('onest', 800, 56, 1.08, -0.02)), tw);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 800, 56, 1.08, -0.02)), tw), tw, { subMax: 32 });
     env.lines(title, 2, 'Категория');
-    title.draw(ctx, tx, 80 + Math.max(0, (circle - title.h) / 2), { color: sf.title });
+    title.draw(ctx, tx, 80 + Math.max(0, (circle - title.h) / 2), { color: sf.title, subColor: sf.sub });
     let y = 80 + Math.max(circle, title.h) + 48;
     const nst = env.t('name', S('onest', 700, 44, 1.15));
     const bst = env.t('body', S('onest', 400, 34, 1.4));
@@ -1190,6 +1270,8 @@ KINDS.resGroup = {
 KINDS.storyAnnounce = {
   name: 'Анонс поста',
   format: 'story',
+  bg: 'blue',
+  subtitle: 'title',
   tune: { title: 'Заголовок карточки' },
   fields: [
     { key: 'head', type: 'text', label: 'Заголовок', sample: 'Новый пост' },
@@ -1199,29 +1281,32 @@ KINDS.storyAnnounce = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
+    const th = env.cover();
     const fw = env.drawFlags(1000, 250, 88, 'right');
     const head = layoutText(ctx, d.head, S('unb', 600, 96, 1.05, -0.03), fw ? 920 - fw - 24 : 920);
-    head.draw(ctx, 80, 250, { color: C.white });
-    const reserve = storyCollab(env, 'onBlue');
-    const ctaY = H - 340 - reserve - 48;
-    drawLine(ctx, d.cta, 80, ctaY, S('onest', 600, 48, 1), { color: C.white });
-    const title = layoutText(ctx, d.title, env.t('title', S('onest', 700, 56, 1.15)), 840);
+    head.draw(ctx, 80, 250, { color: th.title });
+    const reserve = storyCollab(env, th.logo);
+    const showCta = d.cta && env.show('cta');
+    const ctaY = H - 340 - reserve - (showCta ? 48 : 0);
+    if (showCta) drawLine(ctx, d.cta, 80, ctaY, S('onest', 600, 48, 1), { color: th.text });
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 700, 56, 1.15)), 840), 840, { subMax: 34 });
     env.lines(title, 3, 'Название поста');
     const cardH = 40 + 420 + 28 + title.h + 40;
     const top = 250 + Math.max(head.h, fw ? 88 : 0);
     const free = ctaY - top - cardH;
     env.minSpace(free, 40, 'Карточка не помещается — сократи текст');
     const cy = top + Math.max(0, free) / 2;
-    fillRR(ctx, 80, cy, 920, cardH, 40, C.white);
+    fillRR(ctx, 80, cy, 920, cardH, 40, th.bg === C.white ? C.paper : C.white);
     env.photo('image', 120, cy + 40, 840, 420, { radius: 24, placeholder: HATCH_LIGHT });
-    title.draw(ctx, 120, cy + 40 + 420 + 28, { color: C.ink });
+    title.draw(ctx, 120, cy + 40 + 420 + 28, { color: C.ink, subColor: C.slate });
   },
 };
 
 KINDS.storyPoll = {
   name: 'Опрос',
   format: 'story',
+  bg: 'white',
+  subtitle: 'question',
   tune: { title: 'Вопрос' },
   fields: [
     { key: 'question', type: 'textarea', label: 'Вопрос', sample: 'Куда хочешь поступать?' },
@@ -1234,9 +1319,9 @@ KINDS.storyPoll = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.white);
-    const reserve = storyCollab(env, 'main');
-    const q = layoutText(ctx, d.question, env.t('title', S('unb', 600, 88, 1.1, -0.03)), 920);
+    const th = env.cover();
+    const reserve = storyCollab(env, th.logo);
+    const q = titled(ctx, env, d, layoutText(ctx, d.question, env.t('title', S('unb', 600, 88, 1.1, -0.03)), 920), 920);
     env.lines(q, 4, 'Вопрос');
     const opts = d.options || [];
     const optH = 52 + 88;
@@ -1251,14 +1336,16 @@ KINDS.storyPoll = {
     let y = 250 + Math.max(0, avail - total) / 2;
     if (photoH) { env.band('photo', 80, y, 920, ph, { radius: 40 }); y += photoH; }
     if (flagsH) { env.drawFlags(80, y, 88); y += flagsH; }
-    q.draw(ctx, 80, y, { color: C.ink });
+    q.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     y += q.h + 64;
     opts.forEach((o, i) => {
-      const blue = i % 2 === 0;
-      fillRR(ctx, 80, y, 920, optH, optH / 2, blue ? C.blue : C.skyTint);
+      // на синем фоне чередуем белый и Sky Tint, иначе — синий и Sky Tint
+      const first = i % 2 === 0;
+      const fill = first ? (th.bg === C.blue ? C.white : C.blue) : (th.bg === C.skyTint ? C.white : C.skyTint);
+      fillRR(ctx, 80, y, 920, optH, optH / 2, fill);
       const st = S('onest', 700, 52, 1);
       const tw = textWidth(ctx, o.text, st);
-      drawLine(ctx, o.text, 80 + (920 - tw) / 2, y + 44, st, { color: blue ? C.white : C.blue });
+      drawLine(ctx, o.text, 80 + (920 - tw) / 2, y + 44, st, { color: fill === C.blue ? C.white : C.blue });
       y += optH + 28;
     });
   },
@@ -1267,6 +1354,8 @@ KINDS.storyPoll = {
 KINDS.storyQuiz = {
   name: 'Квиз',
   format: 'story',
+  bg: 'paper',
+  subtitle: 'question',
   tune: { title: 'Вопрос', body: 'Ответы' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка', sample: 'Квиз' },
@@ -1280,30 +1369,30 @@ KINDS.storyQuiz = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.paper);
-    const reserve = storyCollab(env, 'main');
+    const th = env.cover();
+    const reserve = storyCollab(env, th.logo);
     const pillO = { size: 44, padX: 40, padY: 24, text: d.pill };
-    const pm = env.pillSize('quiz', 'light', pillO);
-    const q = layoutText(ctx, d.question, env.t('title', S('unb', 600, 80, 1.12, -0.03)), 920);
+    const pm = env.pillSize('quiz', th.surface, pillO);
+    const q = titled(ctx, env, d, layoutText(ctx, d.question, env.t('title', S('unb', 600, 80, 1.12, -0.03)), 920), 920);
     env.lines(q, 4, 'Вопрос');
     const ast = env.t('body', S('onest', 600, 48, 1.15));
     const answers = (d.answers || []).map((a, i) => layoutText(ctx, 'ABCD'[i] + ' · ' + (a.text || ''), ast, 920 - 80));
     const ansH = answers.reduce((s, a) => s + Math.max(a.h, ast.size) + 80, 0) + Math.max(0, answers.length - 1) * 24;
     const avail = H - 250 - 340 - reserve;
-    const rest = pm.h + 56 + q.h + 56 + ansH;
+    const rest = (pm.h ? pm.h + 56 : 0) + q.h + 56 + ansH;
     const ph = env.media('photo') ? Math.max(260, Math.min(480, avail - rest - 56 - 40)) : 0;
     const photoH = ph ? ph + 56 : 0;
     const total = photoH + rest;
     env.minSpace(avail - total, 0, 'Квиз не помещается в безопасную зону Stories');
     let y = 250 + Math.max(0, avail - total) / 2;
     if (photoH) { env.band('photo', 80, y, 920, ph, { radius: 40 }); y += photoH; }
-    env.pill(80, y, 'quiz', 'light', pillO);
-    y += pm.h + 56;
-    q.draw(ctx, 80, y, { color: C.ink });
+    env.pill(80, y, 'quiz', th.surface, pillO);
+    y += pm.h ? pm.h + 56 : 0;
+    q.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
     y += q.h + 56;
     answers.forEach(a => {
       const h = Math.max(a.h, ast.size) + 80;
-      fillRR(ctx, 80, y, 920, h, 28, C.white);
+      fillRR(ctx, 80, y, 920, h, 28, th.bg === C.white ? C.paper : C.white);
       a.draw(ctx, 120, y + 40, { color: C.ink });
       y += h + 24;
     });
@@ -1313,6 +1402,7 @@ KINDS.storyQuiz = {
 KINDS.storyCountdown = {
   name: 'Обратный отсчёт',
   format: 'story',
+  bg: 'ink',
   tune: { number: 'Число' },
   fields: [
     { key: 'label', type: 'textarea', label: 'До чего', sample: 'До вебинара с McGill' },
@@ -1323,16 +1413,17 @@ KINDS.storyCountdown = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.ink);
-    env.bgPhoto('photo', C.ink, 0.74);
-    const reserve = storyCollab(env, 'onDark', 'center');
+    const th = env.cover();
+    env.bgPhoto('photo', th.bg, 0.74);
+    const reserve = storyCollab(env, th.logo, 'center');
     const label = layoutText(ctx, d.label, S('onest', 600, 56, 1.2), 920);
     const nBase = env.t('number', S('unb', 600, 420, 0.9, -0.05));
     const nst = fitSize(ctx, d.number || '', nBase, 920, 160);
     const num = layoutText(ctx, d.number, nst, 920);
     const unitSt = S('unb', 600, 72, 1);
-    const btnO = { size: 44, weight: 700, padX: 56, padY: 36, bg: C.white, color: C.ink };
-    const bm = d.cta ? pillMetrics(ctx, d.cta, btnO) : { w: 0, h: 0 };
+    const btnO = Object.assign({ size: 44, weight: 700, padX: 56, padY: 36 }, th.dark ? { bg: C.white, color: C.ink } : { bg: C.ink, color: C.white });
+    const cta = d.cta && env.show('cta') ? d.cta : '';
+    const bm = cta ? pillMetrics(ctx, cta, btnO) : { w: 0, h: 0 };
     const flagsH = env.flags.length ? 88 : 0;
     const parts = [flagsH, label.h, num.h, d.unit ? 72 : 0, bm.h].filter(Boolean);
     const total = parts.reduce((a, b) => a + b, 0) + (parts.length - 1) * 48;
@@ -1344,20 +1435,22 @@ KINDS.storyCountdown = {
       env.drawFlags((W - fw) / 2, y, 88);
       y += 88 + 48;
     }
-    if (label.h) { label.draw(ctx, 80, y, { color: C.white, align: 'center', width: 920 }); y += label.h + 48; }
-    num.draw(ctx, 80, y, { color: C.lime, align: 'center', width: 920 });
+    if (label.h) { label.draw(ctx, 80, y, { color: th.text, align: 'center', width: 920 }); y += label.h + 48; }
+    num.draw(ctx, 80, y, { color: th.accent, align: 'center', width: 920 });
     y += num.h + 48;
     if (d.unit) {
-      drawLine(ctx, d.unit, 80 + (920 - textWidth(ctx, d.unit, unitSt)) / 2, y, unitSt, { color: C.white });
+      drawLine(ctx, d.unit, 80 + (920 - textWidth(ctx, d.unit, unitSt)) / 2, y, unitSt, { color: th.text });
       y += 72 + 48;
     }
-    if (d.cta) drawPill(ctx, (W - bm.w) / 2, y, d.cta, btnO);
+    if (cta) drawPill(ctx, (W - bm.w) / 2, y, cta, btnO);
   },
 };
 
 KINDS.storyArticle = {
   name: 'Репост статьи',
   format: 'story',
+  bg: 'skyTint',
+  subtitle: 'title',
   tune: { title: 'Заголовок статьи' },
   fields: [
     { key: 'head', type: 'text', label: 'Надпись сверху', sample: 'Новое на сайте' },
@@ -1367,33 +1460,34 @@ KINDS.storyArticle = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.skyTint);
-    const reserve = storyCollab(env, 'main');
+    const th = env.cover();
+    const reserve = storyCollab(env, th.logo);
     const headSt = S('onest', 600, 48, 1);
-    const title = layoutText(ctx, d.title, env.t('title', S('onest', 700, 60, 1.15)), 920 - 96);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 700, 60, 1.15)), 920 - 96), 920 - 96, { subMax: 36 });
     env.lines(title, 3, 'Заголовок статьи');
-    const btnO = { size: 44, weight: 700, padX: 56, padY: 36, bg: C.blue, color: C.white };
-    const bm = d.cta ? pillMetrics(ctx, d.cta, btnO) : { w: 0, h: 0 };
+    const btnO = Object.assign({ size: 44, weight: 700, padX: 56, padY: 36 }, th.bg === C.blue ? { bg: C.white, color: C.blue } : th.dark ? { bg: C.white, color: C.ink } : { bg: C.blue, color: C.white });
+    const cta = d.cta && env.show('cta') ? d.cta : '';
+    const bm = cta ? pillMetrics(ctx, cta, btnO) : { w: 0, h: 0 };
     const cardH = 560 + 48 + title.h + 48;
     const headH = d.head || env.flags.length ? 56 + 48 : 0;
-    const total = headH + cardH + (d.cta ? 48 + bm.h : 0);
+    const total = headH + cardH + (cta ? 48 + bm.h : 0);
     const avail = H - 250 - 340 - reserve;
     env.minSpace(avail - total, 0, 'Не помещается в безопасную зону Stories');
     let y = 250 + Math.max(0, avail - total) / 2;
     if (headH) {
       const fw = env.drawFlags(80, y, 56);
-      if (d.head) drawLine(ctx, d.head, 80 + (fw ? fw + 20 : 0), y + 4, headSt, { color: C.blue });
+      if (d.head) drawLine(ctx, d.head, 80 + (fw ? fw + 20 : 0), y + 4, headSt, { color: th.dark ? C.white : th.accent === C.ink ? C.ink : C.blue });
       y += headH;
     }
     ctx.save();
     rrPath(ctx, 80, y, 920, cardH, 40);
     ctx.clip();
-    fillRect(ctx, 80, y, 920, cardH, C.white);
+    fillRect(ctx, 80, y, 920, cardH, th.bg === C.white ? C.paper : C.white);
     env.photo('image', 80, y, 920, 560, { placeholder: HATCH_LIGHT });
     ctx.restore();
-    title.draw(ctx, 80 + 48, y + 560 + 48, { color: C.ink });
+    title.draw(ctx, 80 + 48, y + 560 + 48, { color: C.ink, subColor: C.slate });
     y += cardH + 48;
-    if (d.cta) drawPill(ctx, (W - bm.w) / 2, y, d.cta, btnO);
+    if (cta) drawPill(ctx, (W - bm.w) / 2, y, cta, btnO);
   },
 };
 
@@ -1402,6 +1496,8 @@ KINDS.storyArticle = {
 KINDS.reelsCover = {
   name: 'Обложка Reels',
   format: 'story',
+  bg: 'blue',
+  subtitle: 'title',
   tune: { title: 'Заголовок' },
   fields: [
     { key: 'photo', type: 'media', label: 'Кадр из ролика', video: true, hint: 'Встанет фоном под синей тонировкой' },
@@ -1411,21 +1507,21 @@ KINDS.reelsCover = {
   draw(ctx, d, env) {
     const { W, H } = env;
     // тонировка как у обложки подборки: Bridge Blue 76% — фото читается фактурой, текст всегда контрастный
-    fillRect(ctx, 0, 0, W, H, C.blue);
-    if (!env.bgPhoto('photo', C.blue, 0.76)) env.slot('photo', 0, 0, W, H);
+    const th = env.cover();
+    if (!env.bgPhoto('photo', th.bg, 0.76)) env.slot('photo', 0, 0, W, H);
     const pillO = { size: 40, padX: 36, padY: 22 };
     const rubric = d.rubric || 'stories';
-    const pm = env.pillSize(rubric, 'blue', pillO);
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 120, 1.05, -0.03)), 920);
+    const pm = env.pillSize(rubric, th.surface, pillO);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 120, 1.05, -0.03)), 920), 920, { subMax: 48 });
     env.lines(title, 5, 'Заголовок');
     const reserve = env.hasCollab ? 44 + 56 : 0;
-    if (reserve) env.logo(80, 240 + 1440 - 44 - 40, 44, 'onBlue', 'left', 920);
-    const total = pm.h + 48 + title.h;
+    if (reserve) env.logo(80, 240 + 1440 - 44 - 40, 44, th.logo, 'left', 920);
+    const total = (pm.h ? pm.h + 48 : 0) + title.h;
     env.minSpace(1440 - reserve - total, 0, 'Заголовок выходит за зону обложки 1080×1440');
     let y = 240 + Math.max(0, 1440 - reserve - total) / 2;
-    env.pill(80, y, rubric, 'blue', pillO);
-    y += pm.h + 48;
-    title.draw(ctx, 80, y, { color: C.white });
+    env.pill(80, y, rubric, th.surface, pillO);
+    y += pm.h ? pm.h + 48 : 0;
+    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
   },
 };
 
@@ -1466,26 +1562,29 @@ KINDS.reelsCaption = {
 KINDS.reelsOutro = {
   name: 'Аутро',
   format: 'story',
+  bg: 'blue',
   fields: [
     { key: 'text', type: 'text', label: 'Подпись', sample: 'Подписывайся: ' + HANDLE },
     optPhoto('Фоном под синей тонировкой'),
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
-    env.bgPhoto('photo', C.blue, 0.78);
+    const th = env.cover();
+    env.bgPhoto('photo', th.bg, 0.78);
     // логотип во всю ширину 720 px; с партнёрами раскладка уменьшается, чтобы влезть в 920
     let lh = 720 * 211 / 940;
-    const lw0 = env.logoWidth(lh, 'onBlue');
+    const lw0 = env.logoWidth(lh, th.logo);
     if (lw0 > 920) lh = lh * 920 / lw0;
-    const lw = env.logoWidth(lh, 'onBlue');
+    const lw = env.logoWidth(lh, th.logo);
+    if (!lw) lh = 0;
     const st = S('onest', 600, 48, 1);
+    const text = d.text && env.show('meta') ? d.text : '';
     const flagsH = env.flags.length ? 88 + 64 : 0;
-    const total = lh + (d.text ? 64 + 48 : 0) + flagsH;
+    const total = (lh ? lh + 64 : 0) + (text ? 48 + 64 : 0) + flagsH;
     let y = (H - total) / 2;
-    env.logo((W - lw) / 2, y, lh, 'onBlue');
-    y += lh + 64;
-    if (d.text) { drawLine(ctx, d.text, (W - textWidth(ctx, d.text, st)) / 2, y, st, { color: C.white }); y += 48 + 64; }
+    env.logo((W - lw) / 2, y, lh || 1, th.logo);
+    y += lh ? lh + 64 : 0;
+    if (text) { drawLine(ctx, text, (W - textWidth(ctx, text, st)) / 2, y, st, { color: th.text }); y += 48 + 64; }
     if (flagsH) env.drawFlags((W - flagsRowWidth(env.flags.length, 88)) / 2, y, 88);
   },
 };
@@ -1493,21 +1592,22 @@ KINDS.reelsOutro = {
 KINDS.highlight = {
   name: 'Обложка хайлайта',
   format: 'story',
+  bg: 'blue',
   fields: [
     { key: 'icon', type: 'icon', label: 'Иконка', hint: 'Если выбраны флаги — вместо иконки встанет флаг', options: GLYPH_CHOICES, sample: 'book-open' },
     { key: 'label', type: 'text', label: 'Название хайлайта', hint: 'Не рисуется — только для имени файла', sample: 'Гайды' },
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
+    const th = env.cover();
     if (env.flags.length) {
       const n = env.flags.length;
       const size = n === 1 ? 460 : n === 2 ? 340 : 280;
       const fw = flagsRowWidth(n, size);
-      env.drawFlags((W - fw) / 2, (H - size) / 2, size, 'left', { ring: 10, ringColor: C.blue });
+      env.drawFlags((W - fw) / 2, (H - size) / 2, size, 'left', { ring: 10, ringColor: th.bg });
       return;
     }
-    drawGlyph(ctx, d.icon || 'book-open', (W - 400) / 2, (H - 400) / 2, 400, C.white);
+    drawGlyph(ctx, d.icon || 'book-open', (W - 400) / 2, (H - 400) / 2, 400, th.dark ? C.white : th.accent === C.ink ? C.ink : C.blue);
   },
 };
 
@@ -1551,6 +1651,7 @@ function tgTheme(rubric, bg) {
 KINDS.tgCover = {
   name: 'Обложка поста',
   format: 'wide',
+  subtitle: 'title',
   tune: { title: 'Заголовок' },
   fields: [
     { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'deadline', rebuild: true },  // образец «По рубрике» меняет цвет
@@ -1564,15 +1665,17 @@ KINDS.tgCover = {
     const th = tgTheme(rubric, d.bg);
     const dark = th.dark ?? (th.text === C.white);
     fillRect(ctx, 0, 0, W, H, th.bg);
+    env.bgColor = th.bg;
     const hasPhoto = Boolean(env.media('photo'));
     if (hasPhoto) env.band('photo', W - 64 - 400, 64, 400, H - 64, { shape: 'arch' });
     const colW = hasPhoto ? W - 128 - 400 - 48 : 1152;
     const flags = env.flags.length ? env.flags : (d.flag ? [d.flag] : []);
-    const pill = drawPill(ctx, 64, 64, RUBRICS[rubric].label, Object.assign({ size: 36, padX: 36, padY: 20, borderWidth: 4, dotSize: 20, flags, flagSize: 56, padFlag: 12 }, th.pill));
+    const pill = env.pill(64, 64, rubric, dark ? (th.bg === C.blue ? 'blue' : 'ink') : 'light',
+      Object.assign({ size: 36, padX: 36, padY: 20, borderWidth: 4, dotSize: 20, flagSize: 56, padFlag: 12 }, th.pill, flags.length && !env.flags.length ? { flags } : {}));
     wideCollab(env, pill.w, pill.h, colW, dark ? (th.bg === C.blue ? 'onBlue' : 'onDark') : 'main');
-    const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, 104, 1.05, -0.03)), colW);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 104, 1.05, -0.03)), colW), colW);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 64, H - 64 - title.h, { color: th.text });
+    title.draw(ctx, 64, H - 64 - title.h, { color: th.text, subColor: dark ? 'rgba(255,255,255,0.82)' : C.graphite });
   },
 };
 
@@ -1581,6 +1684,7 @@ KINDS.tgCover = {
 KINDS.ytWebinar = {
   name: 'Превью вебинара',
   format: 'wide',
+  bg: 'blue',
   tune: { title: 'Заголовок' },
   fields: [
     { key: 'pill', type: 'text', label: 'Плашка', sample: 'Вебинар' },
@@ -1593,7 +1697,7 @@ KINDS.ytWebinar = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
+    const th = env.cover();
     const n = clampCount(d.count);
     const aw = n === 1 ? 420 : n === 2 ? 270 : 196;
     const ah = n === 1 ? H - 80 : n === 2 ? H - 120 : H - 190;
@@ -1601,19 +1705,20 @@ KINDS.ytWebinar = {
     const rightW = n * aw + (n - 1) * gap;
     const rx = n === 1 ? W - aw : W - 48 - rightW;
     ['photo', 'photo2', 'photo3'].slice(0, n).forEach((key, i) => {
-      env.photo(key, rx + i * (aw + gap), H - ah, aw, ah, { shape: 'arch', placeholder: ['#8A909C', '#A7ACB6', 4, 32] });
+      env.photo(key, rx + i * (aw + gap), H - ah, aw, ah, { shape: 'arch', placeholder: th.dark ? ['#8A909C', '#A7ACB6', 4, 32] : HATCH_LIGHT });
     });
     const colW = rx - 64 - 48;
-    const pill = env.pill(64, 64, 'webinar', 'blue', { text: d.pill || undefined, size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14 });
-    const below = wideCollab(env, pill.w, pill.h, colW, 'onBlue');
+    const pill = env.pill(64, 64, 'webinar', th.surface, { text: d.pill || undefined, size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14 });
+    const below = wideCollab(env, pill.w, pill.h, colW, th.logo);
+    const sub = d.sub && env.show('sub');
     const subY = H - 64 - 36;
-    if (d.sub) drawLine(ctx, d.sub, 64, subY, S('onest', 600, 36, 1), { color: C.lime });
+    if (sub) drawLine(ctx, d.sub, 64, subY, S('onest', 600, 36, 1), { color: th.accent });
     const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, n === 1 ? 96 : n === 2 ? 88 : 80, 1.02, -0.03)), colW);
     env.lines(title, 3, 'Заголовок');
-    const top = 64 + pill.h + below;
-    const free = subY - top - title.h;
+    const top = 64 + (pill.h ? pill.h + below : below);
+    const free = (sub ? subY : H - 64) - top - title.h;
     env.minSpace(free, 24, 'Заголовок не помещается — 3–5 слов');
-    title.draw(ctx, 64, top + Math.max(0, free) / 2, { color: C.white });
+    title.draw(ctx, 64, top + Math.max(0, free) / 2, { color: th.title });
   },
 };
 
@@ -1651,6 +1756,7 @@ KINDS.ytInterview = {
 KINDS.ytGuide = {
   name: 'Превью гайда',
   format: 'wide',
+  bg: 'blue',
   tune: { title: 'Заголовок' },
   fields: [
     { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'guide' },
@@ -1661,26 +1767,30 @@ KINDS.ytGuide = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.blue);
+    const th = env.cover();
     const rw = 420, rx = W - 64 - rw;
-    if (env.media('photo')) env.photo('photo', rx, 64, rw, H - 64, { shape: 'arch' });
+    const hasPhoto = Boolean(env.media('photo'));
+    const deco = !hasPhoto && env.show('decor');
+    if (hasPhoto) env.photo('photo', rx, 64, rw, H - 64, { shape: 'arch' });
     else {
-      drawSpans(ctx, rx, 64, rw, H - 128, C.white, C.lime, [3, 2]);
+      // паттерн: дуги цветом текста, одна — акцентом (на Lime и Coral — синяя)
+      if (deco) drawSpans(ctx, rx, 64, rw, H - 128, th.dark ? C.white : C.ink, th.dark ? C.lime : C.blue, [3, 2]);
       env.slot('photo', rx, 64, rw, H - 128);
     }
-    const colW = rx - 64 - 56;
-    const pill = env.pill(64, 64, d.rubric || 'guide', 'blue', { size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14, flagSize: 50, padFlag: 10 });
-    const below = wideCollab(env, pill.w, pill.h, colW, 'onBlue');
+    const colW = hasPhoto || deco ? rx - 64 - 56 : W - 128;
+    const pill = env.pill(64, 64, d.rubric || 'guide', th.surface, { size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14, flagSize: 50, padFlag: 10 });
+    const below = wideCollab(env, pill.w, pill.h, colW, th.logo);
+    const sub = d.sub && env.show('sub');
     const subY = H - 64 - 36;
-    if (d.sub) drawLine(ctx, d.sub, 64, subY, S('onest', 600, 36, 1), { color: C.skyTint });
+    if (sub) drawLine(ctx, d.sub, 64, subY, S('onest', 600, 36, 1), { color: th.sub });
     const tst = env.t('title', S('unb', 600, 88, 1.04, -0.03));
     const title = fitTitle(ctx, d.title, tst, colW, 3, Math.round(tst.size * 0.72));
     env.lines(title, 3, 'Заголовок');
-    const top = 64 + pill.h + below;
-    const bottom = d.sub ? subY - 24 : H - 64;
+    const top = 64 + (pill.h ? pill.h + below : below);
+    const bottom = sub ? subY - 24 : H - 64;
     const free = bottom - top - title.h;
     env.minSpace(free, 24, 'Заголовок не помещается — 3–6 слов');
-    title.draw(ctx, 64, top + Math.max(0, free) / 2, { color: C.white, accent: { word: d.accent, color: C.lime } });
+    title.draw(ctx, 64, top + Math.max(0, free) / 2, { color: th.title, accent: { word: d.accent, color: th.dark ? C.lime : C.blue } });
   },
 };
 
@@ -1688,6 +1798,7 @@ KINDS.ytGuide = {
 KINDS.ytNumber = {
   name: 'Превью с цифрой',
   format: 'wide',
+  bg: 'ink',
   tune: { number: 'Число', title: 'Пояснение' },
   fields: [
     { key: 'rubric', type: 'select', label: 'Рубрика', options: RUBRIC_CHOICES, sample: 'numbers' },
@@ -1698,30 +1809,31 @@ KINDS.ytNumber = {
   ],
   draw(ctx, d, env) {
     const { W, H } = env;
-    fillRect(ctx, 0, 0, W, H, C.ink);
+    const th = env.cover();
     const hasPhoto = Boolean(env.media('photo'));
     const rw = 380, rx = W - 64 - rw;
     if (hasPhoto) env.photo('photo', rx, 64, rw, H - 64, { shape: 'arch' });
     const colW = hasPhoto ? rx - 64 - 56 : W - 128;
-    const pill = env.pill(64, 64, d.rubric || 'numbers', 'ink', { size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14, flagSize: 50, padFlag: 10 });
-    const below = wideCollab(env, pill.w, pill.h, colW, 'onDark');
+    const pill = env.pill(64, 64, d.rubric || 'numbers', th.surface, { size: 32, weight: 700, padX: 28, padY: 16, dotSize: 16, gap: 14, flagSize: 50, padFlag: 10 });
+    const below = wideCollab(env, pill.w, pill.h, colW, th.logo);
+    const source = d.source && env.show('meta');
     const srcY = H - 64 - 28;
-    if (d.source) drawLine(ctx, d.source, 64, srcY, S('onest', 500, 28, 1), { color: C.mistDark });
+    if (source) drawLine(ctx, d.source, 64, srcY, S('onest', 500, 28, 1), { color: th.sub });
     const nBase = env.t('number', S('unb', 600, 230, 0.9, -0.05));
     const nst = fitSize(ctx, d.number || '', nBase, colW, Math.round(nBase.size * 0.6));
     const num = layoutText(ctx, d.number, nst, colW);
     if (num.lines.length > 1) env.warn('Число не помещается в одну строку — сократи его');
     const txt = layoutText(ctx, d.text, env.t('title', S('onest', 600, 48, 1.2)), Math.min(colW, 780));
     env.lines(txt, 2, 'Пояснение');
-    const top = 64 + pill.h + below;
-    const bottom = d.source ? srcY - 32 : H - 64;
+    const top = 64 + (pill.h ? pill.h + below : below);
+    const bottom = source ? srcY - 32 : H - 64;
     const blockH = num.h + 28 + txt.h;
     const free = bottom - top - blockH;
     env.minSpace(free, 24, 'Текст не помещается');
     let y = top + Math.max(0, free) / 2;
-    num.draw(ctx, 64, y, { color: C.lime });
+    num.draw(ctx, 64, y, { color: th.accent });
     y += num.h + 28;
-    txt.draw(ctx, 64, y, { color: C.white });
+    txt.draw(ctx, 64, y, { color: th.text });
   },
 };
 
@@ -1781,12 +1893,14 @@ KINDS.ytVersus = {
       env.fits(80 + 64 + 40, nameY - 28 - (flag ? 112 : 0), 'Названия не помещаются — сократи их');
     });
     const r = 78;
-    fillCircle(ctx, half, H / 2, r, C.lime);
-    const vs = d.vs || 'vs';
-    const vst = fitSize(ctx, vs, S('unb', 700, 56, 1, -0.02), r * 1.5, 30);
-    drawLine(ctx, vs, half - textWidth(ctx, vs, vst) / 2, H / 2 - vst.size / 2, vst, { color: C.ink });
-    const pill = drawPill(ctx, 64, 64, d.pill || RUBRICS.countries.label, Object.assign({ size: 32, weight: 700, padX: 28, padY: 16 }, rubricPillStyle('countries', 'blue')));
-    env.collab(W - 64, 64 + (pill.h - 44) / 2, 44, 'monoWhite', 'right', half - 64 - 40);
+    if (env.show('decor')) {
+      fillCircle(ctx, half, H / 2, r, C.lime);
+      const vs = d.vs || 'vs';
+      const vst = fitSize(ctx, vs, S('unb', 700, 56, 1, -0.02), r * 1.5, 30);
+      drawLine(ctx, vs, half - textWidth(ctx, vs, vst) / 2, H / 2 - vst.size / 2, vst, { color: C.ink });
+    }
+    const pill = env.pill(64, 64, 'countries', 'blue', { text: d.pill || undefined, size: 32, weight: 700, padX: 28, padY: 16 });
+    env.collab(W - 64, 64 + (Math.max(pill.h, 44) - 44) / 2, 44, 'monoWhite', 'right', half - 64 - 40);
   },
 };
 
@@ -1826,6 +1940,12 @@ KINDS.ytLowerThird = {
 const FLAGS_FIELD = { key: 'flags', type: 'flags', label: 'Флаги — по желанию', max: 3, hint: 'До 3 стран: встанут в плашку рубрики или в свободный угол' };
 for (const def of Object.values(KINDS)) {
   if (!def.noFlags) def.fields.push(FLAGS_FIELD);
+  // подзаголовок — сразу после поля заголовка; его кегль тоже подстраивается
+  if (def.subtitle) {
+    const i = def.fields.findIndex(f => f.key === def.subtitle);
+    def.fields.splice(i + 1, 0, SUBTITLE_FIELD);
+    def.tune = Object.assign({}, def.tune, { sub: 'Подзаголовок' });
+  }
 }
 
 /* ======================================================= подборка: разбор */
@@ -1901,7 +2021,7 @@ function parseResourcePost(text) {
     }
   }
   slides.push({ kind: 'guideFinal', data: { title: 'Сохрани, чтобы вернуться к подборке' } });
-  return slides.slice(0, 10);
+  return slides.slice(0, MAX_SLIDES);
 }
 
 const RESOURCES_SAMPLE = `8 приложений, которые помогут учиться продуктивнее 💎
@@ -1930,6 +2050,9 @@ const RESOURCES_SAMPLE = `8 приложений, которые помогут 
  * «+ слайд». rule/structure/volume — из «Правил для форматов» (Tone of Voice).
  * importer — если есть, в редакторе появляется «Вставить текст поста».
  */
+/* До 20 слайдов в материале — столько сейчас позволяет карусель Instagram. */
+const MAX_SLIDES = 20;
+
 /* Превью YouTube 1280×720 — в одном материале можно собрать несколько вариантов. */
 const YT_COVERS = ['ytWebinar', 'ytInterview', 'ytGuide', 'ytNumber', 'ytVersus'];
 
@@ -1945,7 +2068,7 @@ const TEMPLATES = [
       { kind: 'textSlide' },
       { kind: 'textSlide', data: { title: 'Что делать', body: '- Проверь требования программы на сайте вуза\n- Подготовь документы до 15 января\n- Подай заявку через портал KU Leuven', bg: 'white' } },
     ],
-    allowed: ['newsCover', 'textSlide', 'factsSlide'], max: 5,
+    allowed: ['newsCover', 'textSlide', 'factsSlide'], max: MAX_SLIDES,
   },
   {
     id: 'story', group: 'post', rubric: 'stories', name: 'История студента',
@@ -1961,7 +2084,7 @@ const TEMPLATES = [
       { kind: 'quote', data: { quote: 'Два отказа научили меня писать эссе', name: 'Алия, 18', meta: 'MIT · Алматы' } },
       { kind: 'storyInner', data: { question: 'Твой совет тем, кто поступает сейчас?', answer: 'Начинай за год и подавайся в 8–12 вузов. Отказ — это итог конкурса, а не оценка тебя.' } },
     ],
-    allowed: ['storyCover', 'storyInner', 'quote', 'textSlide'], max: 10,
+    allowed: ['storyCover', 'storyInner', 'quote', 'textSlide'], max: MAX_SLIDES,
   },
   {
     id: 'uni', group: 'post', rubric: 'uni', name: 'Профиль университета',
@@ -1974,7 +2097,7 @@ const TEMPLATES = [
       { kind: 'factsSlide' },
       { kind: 'textSlide', data: { title: 'Стипендии', body: '- Entrance Scholarships — от 3 000 до 12 000 CAD, автоматически при поступлении\n- Major Entrance Scholarships — до 40 000 CAD за 4 года, нужна отдельная заявка\n\nИсточник: mcgill.ca, 09.2026' } },
     ],
-    allowed: ['uniCover', 'factsSlide', 'textSlide'], max: 5,
+    allowed: ['uniCover', 'factsSlide', 'textSlide'], max: MAX_SLIDES,
   },
   {
     id: 'webinar', group: 'post', rubric: 'webinar', name: 'Анонс вебинара',
@@ -1983,7 +2106,7 @@ const TEMPLATES = [
     structure: 'Спикер → 3 темы → дата → регистрация',
     volume: 'За 7 дней, за 1 день, за 1 час',
     slides: [{ kind: 'webinar' }],
-    allowed: ['webinar', 'textSlide'], max: 3,
+    allowed: ['webinar', 'textSlide'], max: MAX_SLIDES,
   },
   {
     id: 'webinarMulti', group: 'post', rubric: 'webinar', name: 'Вебинар · 2–3 спикера',
@@ -2003,7 +2126,7 @@ const TEMPLATES = [
         date: '12 ноября', time: '19:00 по Астане',
       },
     }],
-    allowed: ['webinar', 'textSlide'], max: 3,
+    allowed: ['webinar', 'textSlide'], max: MAX_SLIDES,
   },
   {
     id: 'deadlines', group: 'post', rubric: 'deadline', name: 'Дедлайны и гранты',
@@ -2012,7 +2135,7 @@ const TEMPLATES = [
     structure: 'Программа → дата → осталось дней → что нужно',
     volume: '1–3 слайда',
     slides: [{ kind: 'deadlines' }],
-    allowed: ['deadlines', 'textSlide'], max: 3,
+    allowed: ['deadlines', 'textSlide'], max: MAX_SLIDES,
   },
   {
     id: 'guide', group: 'post', rubric: 'guide', name: 'Гайд-карусель',
@@ -2029,7 +2152,7 @@ const TEMPLATES = [
       { kind: 'guideChecklist' },
       { kind: 'guideFinal' },
     ],
-    allowed: ['guideCover', 'guideStep', 'guideMistakes', 'guideChecklist', 'guideFinal', 'textSlide'], max: 10,
+    allowed: ['guideCover', 'guideStep', 'guideMistakes', 'guideChecklist', 'guideFinal', 'textSlide'], max: MAX_SLIDES,
   },
   {
     id: 'resources', group: 'post', rubric: 'resources', name: 'Подборка ресурсов',
@@ -2040,7 +2163,7 @@ const TEMPLATES = [
     slides: parseResourcePost(RESOURCES_SAMPLE),
     importer: parseResourcePost,
     importHint: 'Вставь текст поста целиком: первая строка — заголовок с числом, дальше категории и пункты «Название — описание». Эмодзи уберутся сами, по 2 ресурса на слайд.',
-    allowed: ['resCover', 'resGroup', 'textSlide', 'guideFinal'], max: 10,
+    allowed: ['resCover', 'resGroup', 'textSlide', 'guideFinal'], max: MAX_SLIDES,
   },
   {
     id: 'number', group: 'post', rubric: 'numbers', name: 'Цифры и факты',
@@ -2049,7 +2172,7 @@ const TEMPLATES = [
     structure: 'Число → пояснение → источник',
     volume: '1–5 слайдов',
     slides: [{ kind: 'number' }],
-    allowed: ['number', 'textSlide', 'factsSlide'], max: 5,
+    allowed: ['number', 'textSlide', 'factsSlide'], max: MAX_SLIDES,
   },
   {
     id: 'compare', group: 'post', rubric: 'countries', name: 'Сравнение стран',
@@ -2058,7 +2181,7 @@ const TEMPLATES = [
     structure: 'Стоимость → язык → работа → виза',
     volume: '1–5 слайдов',
     slides: [{ kind: 'compare' }],
-    allowed: ['compare', 'textSlide'], max: 5,
+    allowed: ['compare', 'textSlide'], max: MAX_SLIDES,
   },
   {
     id: 'quote', group: 'post', rubric: 'stories', name: 'Цитата героя',
@@ -2067,7 +2190,7 @@ const TEMPLATES = [
     structure: 'Цитата → кто сказал',
     volume: '1 слайд',
     slides: [{ kind: 'quote' }],
-    allowed: ['quote'], max: 3,
+    allowed: ['quote'], max: MAX_SLIDES,
   },
   {
     id: 'partner', group: 'post', rubric: 'partner', name: 'Партнёрский пост',
@@ -2079,7 +2202,7 @@ const TEMPLATES = [
       { kind: 'partnerCover' },
       { kind: 'factsSlide', data: { title: 'Условия', bg: 'white', rows: [{ label: 'Программы', value: 'MSc в 60+ направлениях' }, { label: 'Язык', value: 'IELTS 6.5–7.0' }, { label: 'Стоимость', value: 'от XX 000 £ в год' }, { label: 'Дедлайн', value: 'Зависит от программы' }] } },
     ],
-    allowed: ['partnerCover', 'factsSlide', 'textSlide'], max: 8,
+    allowed: ['partnerCover', 'factsSlide', 'textSlide'], max: MAX_SLIDES,
   },
 
   {
@@ -2089,7 +2212,7 @@ const TEMPLATES = [
     structure: 'Заголовок → карточка поста → «Смотри в ленте»',
     volume: 'Серия до 10 Stories',
     slides: [{ kind: 'storyAnnounce' }],
-    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: 10,
+    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: MAX_SLIDES,
   },
   {
     id: 'storyPoll', group: 'stories', rubric: 'news', name: 'Опрос',
@@ -2098,7 +2221,7 @@ const TEMPLATES = [
     structure: 'Вопрос → варианты',
     volume: 'Серия до 10 Stories',
     slides: [{ kind: 'storyPoll' }],
-    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: 10,
+    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: MAX_SLIDES,
   },
   {
     id: 'storyQuiz', group: 'stories', rubric: 'news', name: 'Квиз',
@@ -2107,7 +2230,7 @@ const TEMPLATES = [
     structure: 'Плашка → вопрос → ответы',
     volume: 'Серия до 10 Stories',
     slides: [{ kind: 'storyQuiz' }],
-    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: 10,
+    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: MAX_SLIDES,
   },
   {
     id: 'storyCountdown', group: 'stories', rubric: 'webinar', name: 'Обратный отсчёт',
@@ -2116,7 +2239,7 @@ const TEMPLATES = [
     structure: 'До чего → сколько осталось → напомнить',
     volume: 'Серия до 10 Stories',
     slides: [{ kind: 'storyCountdown' }],
-    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: 10,
+    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: MAX_SLIDES,
   },
   {
     id: 'storyArticle', group: 'stories', rubric: 'news', name: 'Репост статьи',
@@ -2125,7 +2248,7 @@ const TEMPLATES = [
     structure: 'Надпись → карточка → кнопка',
     volume: 'Серия до 10 Stories',
     slides: [{ kind: 'storyArticle' }],
-    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: 10,
+    allowed: ['storyAnnounce', 'storyPoll', 'storyQuiz', 'storyCountdown', 'storyArticle'], max: MAX_SLIDES,
   },
 
   {
@@ -2135,7 +2258,7 @@ const TEMPLATES = [
     structure: 'Плашка рубрики → заголовок',
     volume: '1 обложка',
     slides: [{ kind: 'reelsCover' }],
-    allowed: ['reelsCover', 'reelsCaption', 'reelsOutro'], max: 5,
+    allowed: ['reelsCover', 'reelsCaption', 'reelsOutro'], max: MAX_SLIDES,
   },
   {
     id: 'reelsCaption', group: 'reels', rubric: 'stories', name: 'Титры и субтитры',
@@ -2144,7 +2267,7 @@ const TEMPLATES = [
     structure: 'Имя героя → субтитр',
     volume: 'Кадр или PNG с прозрачностью',
     slides: [{ kind: 'reelsCaption' }],
-    allowed: ['reelsCover', 'reelsCaption', 'reelsOutro'], max: 10,
+    allowed: ['reelsCover', 'reelsCaption', 'reelsOutro'], max: MAX_SLIDES,
   },
   {
     id: 'reelsOutro', group: 'reels', rubric: 'stories', name: 'Аутро Reels',
@@ -2153,7 +2276,7 @@ const TEMPLATES = [
     structure: 'Логотип → подписка',
     volume: '1 кадр',
     slides: [{ kind: 'reelsOutro' }],
-    allowed: ['reelsCover', 'reelsCaption', 'reelsOutro'], max: 3,
+    allowed: ['reelsCover', 'reelsCaption', 'reelsOutro'], max: MAX_SLIDES,
   },
   {
     id: 'highlight', group: 'reels', rubric: 'guide', name: 'Обложки хайлайтов',
@@ -2169,7 +2292,7 @@ const TEMPLATES = [
       { kind: 'highlight', data: { icon: 'video-camera', label: 'Вебинары' } },
       { kind: 'highlight', data: { icon: 'globe-hemisphere-east', label: 'Страны' } },
     ],
-    allowed: ['highlight'], max: 20,
+    allowed: ['highlight'], max: MAX_SLIDES,
   },
 
   {
@@ -2179,7 +2302,7 @@ const TEMPLATES = [
     structure: 'Плашка → заголовок',
     volume: '1 обложка на пост',
     slides: [{ kind: 'tgCover' }],
-    allowed: ['tgCover'], max: 10,
+    allowed: ['tgCover'], max: MAX_SLIDES,
   },
 
   {
@@ -2189,7 +2312,7 @@ const TEMPLATES = [
     structure: 'Плашка → тема → подзаголовок',
     volume: '1 превью',
     slides: [{ kind: 'ytWebinar' }],
-    allowed: YT_COVERS, max: 5,
+    allowed: YT_COVERS, max: MAX_SLIDES,
   },
   {
     id: 'ytInterview', group: 'youtube', rubric: 'interview', name: 'Превью интервью',
@@ -2198,7 +2321,7 @@ const TEMPLATES = [
     structure: 'Плашка → маршрут → герой',
     volume: '1 превью',
     slides: [{ kind: 'ytInterview' }],
-    allowed: YT_COVERS, max: 5,
+    allowed: YT_COVERS, max: MAX_SLIDES,
   },
   {
     id: 'ytGuide', group: 'youtube', rubric: 'guide', name: 'Превью гайда',
@@ -2207,7 +2330,7 @@ const TEMPLATES = [
     structure: 'Плашка → заголовок → подзаголовок',
     volume: '1 превью',
     slides: [{ kind: 'ytGuide' }],
-    allowed: YT_COVERS, max: 5,
+    allowed: YT_COVERS, max: MAX_SLIDES,
   },
   {
     id: 'ytNumber', group: 'youtube', rubric: 'numbers', name: 'Превью с цифрой',
@@ -2216,7 +2339,7 @@ const TEMPLATES = [
     structure: 'Плашка → число → пояснение → источник',
     volume: '1 превью',
     slides: [{ kind: 'ytNumber' }],
-    allowed: YT_COVERS, max: 5,
+    allowed: YT_COVERS, max: MAX_SLIDES,
   },
   {
     id: 'ytVersus', group: 'youtube', rubric: 'countries', name: 'Превью сравнения',
@@ -2225,7 +2348,7 @@ const TEMPLATES = [
     structure: 'Слева → vs → справа',
     volume: '1 превью',
     slides: [{ kind: 'ytVersus' }],
-    allowed: YT_COVERS, max: 5,
+    allowed: YT_COVERS, max: MAX_SLIDES,
   },
   {
     id: 'ytLowerThird', group: 'youtube', rubric: 'webinar', name: 'Плашка спикера',
@@ -2234,7 +2357,7 @@ const TEMPLATES = [
     structure: 'Имя → должность',
     volume: 'PNG с прозрачностью',
     slides: [{ kind: 'ytLowerThird' }],
-    allowed: ['ytLowerThird'], max: 10,
+    allowed: ['ytLowerThird'], max: MAX_SLIDES,
   },
 ];
 
