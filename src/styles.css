@@ -396,13 +396,13 @@ h1, h2, h3, p { margin: 0; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > label, .field > .flabel { font-weight: 700; font-size: 14px; }
 .field .hint { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
-.field input[type="text"], .field textarea, .field select, .list-row input[type="text"], .list-row textarea {
+.field input[type="text"], .field textarea, .field select, .list-row input[type="text"], .list-row textarea, .look input[type="text"] {
   width: 100%; min-height: 44px; padding: 10px 12px;
   border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--input);
   font-size: 15px; line-height: 1.35;
 }
 .field textarea, .list-row textarea { resize: vertical; min-height: 72px; }
-.field input:focus, .field textarea:focus, .field select:focus, .list-row input:focus, .list-row textarea:focus {
+.field input:focus, .field textarea:focus, .field select:focus, .list-row input:focus, .list-row textarea:focus, .look input:focus {
   outline: none; border-color: var(--blue); box-shadow: var(--focus);
 }
 .field select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 20px) 20px, calc(100% - 14px) 20px; background-size: 6px 6px; background-repeat: no-repeat; padding-right: 36px; }
@@ -485,6 +485,12 @@ h1, h2, h3, p { margin: 0; }
 .logo-seg.w3 button.word { grid-column: span 4; }
 .logo-seg.w2 button.word { grid-column: span 6; }
 .logo-seg.w2 button.word:nth-child(2) { grid-column: span 6; }
+.place-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 16px; background: var(--hover); max-width: 240px; }
+.place-grid button { height: 40px; border: 0; border-radius: 12px; background: transparent; font-size: 18px; color: var(--muted); }
+.place-grid button.def { color: var(--text); }
+.place-grid button.on { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+.place-grid.one-row { max-width: none; }
+.place-grid.one-row button { font-size: 13px; font-weight: 600; height: 34px; }
 .look-checks { display: flex; flex-direction: column; gap: 6px; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
 .check input { width: 18px; height: 18px; accent-color: var(--blue); flex: none; }

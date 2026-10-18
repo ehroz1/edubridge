@@ -228,6 +228,7 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   const corner = LOGO_CORNERS.includes(look.logo) || look.logo === 'free' ? look.logo : null;
   const logoOff = look.logo === 'none';
   let builtinLogo = false;
+  let placeDef = null;
   const warnings = [];
   const slots = [];
   const warn = msg => { if (!warnings.includes(msg)) warnings.push(msg); };
@@ -297,6 +298,33 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
       return drawLogoAt(x, y, h, variant, align, maxW);
     },
     get hasCollab() { return partners.length > 0 && !logoOff && !corner; },
+    /*
+     * Расположение текстового блока из «Оформления». def — как в макете:
+     * две буквы «строка+колонка» (t/m/b + l/c/r) для сетки 3×3 или одна
+     * колонка (l/c/r), если в макете можно менять только выравнивание строк.
+     * Возвращает помощников: y() — куда поставить блок по вертикали, x() —
+     * сдвиг объекта по горизонтали, align — выравнивание строк для draw().
+     */
+    place(def = 'ml') {
+      const full = def.length === 2;
+      elements.add(full ? 'place' : 'align');
+      placeDef = def;
+      const row = full ? (/^[tmb]$/.test(look.vpos) ? look.vpos : def[0]) : 't';
+      const col = /^[lcr]$/.test(look.align) ? look.align : def[def.length - 1];
+      const align = { l: 'left', c: 'center', r: 'right' }[col];
+      return {
+        row, col, align,
+        y(top, bottom, h) {
+          const free = bottom - top - h;
+          if (row === 't' || free <= 0) return top;
+          return row === 'b' ? bottom - h : top + free / 2;
+        },
+        x(x, width, w) {
+          return col === 'c' ? x + (width - w) / 2 : col === 'r' ? x + width - w : x;
+        },
+        opts(width, extra) { return Object.assign({ align, width }, extra); },
+      };
+    },
     /* Отмечает элемент дизайна, который можно скрыть в «Оформлении»; false — скрыт. */
     show(id) {
       elements.add(id);
@@ -359,7 +387,7 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   }
   ctx.restore();
   if (corner || builtinLogo) elements.add('logo');
-  return { warnings, slots, W: fmt.w, H: fmt.h, elements: [...elements], builtinLogo };
+  return { warnings, slots, W: fmt.w, H: fmt.h, elements: [...elements], builtinLogo, place: placeDef };
 }
 
 /* ------------------------------------------------- логотип в углу слайда */
@@ -2109,6 +2137,38 @@ function buildLook() {
     row.querySelectorAll('button').forEach((b, i) => b.classList.toggle('word', i < opts.length - 4));
   }
 
+  // расположение и выравнивание текста
+  if (has.has('place') || has.has('align')) {
+    const full = has.has('place');
+    const g = group(full ? 'Расположение текста' : 'Выравнивание текста',
+      full ? 'Где стоит текстовый блок и как выровнены строки. Поля и безопасные зоны соблюдаются' : 'Как выровнены строки заголовка и текста');
+    const probe = renderSlide(lookScratch.getContext('2d'), Object.assign({}, slide, { look: {} }), state.current, state.draft.slides, templateOf(state.draft), { media: state.media[slide.id] || {} });
+    const cur = (full ? (look.vpos || probe.place[0]) : '') + (look.align || probe.place[probe.place.length - 1]);
+    const grid = document.createElement('div');
+    grid.className = 'place-grid' + (full ? '' : ' one-row');
+    const rows = full ? ['t', 'm', 'b'] : [''];
+    const arrows = { tl: '↖', tc: '↑', tr: '↗', ml: '←', mc: '•', mr: '→', bl: '↙', bc: '↓', br: '↘', l: 'По левому краю', c: 'По центру', r: 'По правому краю' };
+    for (const r of rows) {
+      for (const c of ['l', 'c', 'r']) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = arrows[r + c];
+        b.classList.toggle('on', r + c === cur);
+        if (r + c === probe.place) b.classList.add('def');
+        b.title = r + c === probe.place ? 'Как в макете' : '';
+        b.addEventListener('click', () => {
+          pushUndo();
+          if (full) { if (r === probe.place[0]) delete look.vpos; else look.vpos = r; }
+          if (c === probe.place[probe.place.length - 1]) delete look.align; else look.align = c;
+          grid.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+          changed();
+        });
+        grid.appendChild(b);
+      }
+    }
+    g.insertBefore(grid, g.querySelector('.hint'));
+  }
+
   // плашка рубрики
   if (has.has('pill')) {
     const g = group('Плашка');
@@ -2973,6 +3033,7 @@ const HELP = `
 <h3>5. Оформление слайда</h3>
 <ul>
 <li>Блок <b>Оформление</b> под полями: фон обложки из палитры брендбука (текст сам становится Ink или белым), логотип edubridge — по макету, скрыть или в угол (<b>«В свободный угол»</b> сам найдёт место, где логотип ничего не накроет).</li>
+<li><b>Расположение текста</b> — сетка 3×3: блок вверх, по центру или вниз, строки по левому краю, по центру или по правому. В макетах, где текст привязан к фото или таблице, — только выравнивание строк.</li>
 <li>Плашку можно скрыть, переписать и перекрасить. Галочками в «Показывать» убираются подзаголовок, счётчик, подписи, декор и кнопки.</li>
 <li>У каждого заголовка есть поле <b>«Подзаголовок — по желанию»</b>. <b>Применить ко всем слайдам</b> переносит оформление на весь материал.</li>
 </ul>
