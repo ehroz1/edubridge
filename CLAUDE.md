@@ -10,7 +10,8 @@ covers, YouTube thumbnails and a speaker lower third), built strictly to the
 edubridge brandbook (`brandbook/Edubridge Brandbook.dc.html`). It is a sibling
 of `ehroz1/card-maker-wemedia` and reuses its single-file architecture, video
 pipeline, ZIP writer and PWA setup, but the editing model is different: every
-slide has a typed form (no text markup), and there is a template picker screen
+slide has a typed form (text markup only for inline formatting, inserted by a
+toolbar), and there is a template picker screen
 with live previews.
 
 UI text, code comments and user-facing docs (README.md) are in Russian —
@@ -146,6 +147,19 @@ pillStyle, vpos, align, hide: [] }`, empty = brandbook layout) and is applied in
   `titled()`, which returns a layoutText-compatible block.
 
 `MAX_SLIDES` (20) is every template's `max`.
+
+Inline formatting is markup inside field values: `*accent*`, `**bold**`,
+`==marker==`, `{blue|lime|coral|sky|ink|white}color{/}` (paired per
+paragraph; unpaired marks stay literal). `layoutText()` sends any text with
+markup to `layoutRich()` (same glue/wrap rules, widths per styled run) and
+`drawLaidText()` to `drawRich()`; plain text keeps the old path, so
+unformatted slides render pixel-identically. The accent color comes from the
+draw `color` (light text → Lime, blue → Ink, else Bridge Blue) and the
+slide background `RICH_BG`, which `renderSlide()` resets and `env.bgColor`
+sets (on Lime/Coral the accent turns bold instead). `textWidth()` is
+markup-aware; use `stripRich()` where text leaves the canvas (file names).
+The form's floating toolbar (`#fmtBar`, `fmtWrap()`/`fmtClear()`) only edits
+the field value and dispatches `input`, so undo and autosave just work.
 
 State: `state.draft` is `{ id, templateId, name, mode, collab: { ids, mono },
 slides: [{ id, kind, data, tune, look }] }` and is autosaved to `localStorage`

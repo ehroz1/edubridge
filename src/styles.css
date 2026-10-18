@@ -388,7 +388,7 @@ h1, h2, h3, p { margin: 0; }
 .stage-nav { display: flex; align-items: center; gap: 4px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 
 /* ---- форма справа */
-.form-panel { overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface); padding: 22px 22px 60px; }
+.form-panel { position: relative; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface); padding: 22px 22px 60px; }
 .form-head { margin-bottom: 18px; }
 .eyebrow { font-size: 13px; color: var(--muted); font-weight: 600; }
 .form-head h2 { font: 700 22px/1.2 EBOnest, sans-serif; letter-spacing: -0.01em; margin-top: 2px; }
@@ -469,6 +469,27 @@ h1, h2, h3, p { margin: 0; }
 .tune-role { display: flex; flex-direction: column; gap: 6px; }
 .tune-role .rname { font-weight: 600; font-size: 13px; }
 .tune > .hint { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+/* ---- панель форматирования над полем */
+.fmt-bar {
+  position: absolute; z-index: 20; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px;
+  border-radius: 14px; background: var(--surface); box-shadow: 0 6px 24px rgba(18,20,24,.16), 0 0 0 1px var(--line);
+  max-width: calc(100% - 16px);
+}
+.fmt-bar[hidden] { display: none; }
+.fmt-bar > button {
+  height: 32px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent;
+  font-size: 13px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 6px;
+}
+.fmt-bar > button:hover { background: var(--hover); }
+.fmt-bar .fmt-clear { color: var(--muted); }
+.fmt-acc { color: var(--blue); font-weight: 800; }
+.fmt-mark { background: #C8F169; color: #121418; border-radius: 4px; padding: 0 4px; font-weight: 700; }
+.fmt-dot { width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(#0A34F5 0 33%, #FF5A36 0 66%, #C8F169 0); }
+.fmt-colors { display: flex; gap: 6px; width: 100%; padding: 4px 6px 2px; }
+.fmt-colors[hidden] { display: none; }
+.fmt-colors button { width: 30px; height: 30px; border: 0; border-radius: 50%; padding: 0; background: transparent; display: grid; place-items: center; }
+.fmt-colors i { width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(18,20,24,.2); }
+
 /* ---- оформление слайда: фон, логотип, плашка, скрытые элементы */
 .look { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 16px; }
 .look[hidden] { display: none; }

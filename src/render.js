@@ -119,6 +119,7 @@ function glueGroups(words) {
  * и методом draw.
  */
 function layoutText(ctx, text, st, maxWidth) {
+  if (hasRich(text)) return layoutRich(ctx, String(text), st, maxWidth);
   const size = st.size;
   const spacing = setFont(ctx, st, size);
   const lineH = size * st.lh;
@@ -164,6 +165,7 @@ function layoutText(ctx, text, st, maxWidth) {
 
 /* Рисует разложенный текст. opts: width (для выключки), align, color, accent: {word, color}. */
 function drawLaidText(ctx, lt, x, y, opts = {}) {
+  if (lt.rich) { drawRich(ctx, lt, x, y, opts); return; }
   const { st, size, lineH } = lt;
   const m = METRICS[st.family];
   const spacing = setFont(ctx, st, size);
@@ -218,6 +220,7 @@ function splitAccent(line, word) {
 
 /* Одна строка без переноса — для подписей, дат, ников. Возвращает ширину. */
 function textWidth(ctx, text, st) {
+  if (hasRich(text)) return layoutRich(ctx, String(text).replace(/\n/g, ' '), st, 1e6).maxW;
   const spacing = setFont(ctx, st, st.size);
   return measureWidth(ctx, String(text ?? ''), spacing);
 }
@@ -226,6 +229,242 @@ function drawLine(ctx, text, x, y, st, opts = {}) {
   const lt = layoutText(ctx, String(text ?? '').replace(/\n/g, ' '), st, 1e6);
   lt.draw(ctx, x, y, opts);
   return lt;
+}
+
+/* ------------------------------------------------- форматирование текста */
+
+/*
+ * Разметка в полях формы (её ставят кнопки над полем):
+ *   *акцент*  — цвет акцента по брендбуку (Lime на тёмном, Bridge Blue на светлом)
+ *   **жирный** — Onest 700 (Unbounded — 700)
+ *   ==маркер== — слово на подложке Lime
+ *   {coral}цвет{/} — цвет из палитры: blue, lime, coral, sky, ink, white
+ * Непарные значки остаются в тексте как есть.
+ */
+const RICH_COLORS = ['blue', 'lime', 'coral', 'sky', 'ink', 'white'];
+const RICH_TOKEN = /\*\*|\*|==|\{(?:blue|lime|coral|sky|ink|white)\}|\{\/\}/g;
+const RICH_TEST = /\*|==|\{(?:blue|lime|coral|sky|ink|white|\/)\}/;
+/* Фон слайда — от него зависят акцент и маркер; задаётся в renderSlide через env.cover(). */
+let RICH_BG = null;
+
+function hasRich(text) { return typeof text === 'string' && RICH_TEST.test(text); }
+
+/* Убирает разметку — для имён файлов и подписей в интерфейсе. */
+function stripRich(text) {
+  return String(text ?? '').split('\n').map(p => parseRich(p).plain).join('\n');
+}
+
+/* Абзац → текст без значков и стиль каждого символа { b, a, m, c }. */
+function parseRich(para) {
+  const toks = [];
+  RICH_TOKEN.lastIndex = 0;
+  for (let m; (m = RICH_TOKEN.exec(para));) toks.push({ i: m.index, s: m[0] });
+  const used = new Set();
+  for (const kind of ['**', '*', '==']) {
+    let open = null;
+    for (const t of toks) {
+      if (t.s !== kind) continue;
+      if (open) { used.add(open); used.add(t); open = null; } else open = t;
+    }
+  }
+  let open = null;
+  for (const t of toks) {
+    if (t.s.length > 3 && t.s !== '{/}') open = t;
+    else if (t.s === '{/}' && open) { used.add(open); used.add(t); open = null; }
+  }
+  let plain = '';
+  const styles = [];
+  let cur = { b: false, a: false, m: false, c: null };
+  let pos = 0;
+  const push = upto => {
+    for (const ch of para.slice(pos, upto)) { plain += ch; for (let k = 0; k < ch.length; k++) styles.push(cur); }
+  };
+  for (const t of toks) {
+    if (!used.has(t)) continue;
+    push(t.i);
+    cur = Object.assign({}, cur);
+    if (t.s === '**') cur.b = !cur.b;
+    else if (t.s === '*') cur.a = !cur.a;
+    else if (t.s === '==') cur.m = !cur.m;
+    else if (t.s === '{/}') cur.c = null;
+    else cur.c = t.s.slice(1, -1);
+    pos = t.i + t.s.length;
+  }
+  push(para.length);
+  return { plain, styles };
+}
+
+function boldWeight(st) {
+  return Math.min(st.family === 'unb' ? 700 : 800, Math.max(700, st.weight + 200));
+}
+
+/* Куски слова с одинаковым стилем: [{ text, style }]. */
+function richRuns(word, extraAccent) {
+  const runs = [];
+  for (let i = word.s; i < word.e; i++) {
+    const style = word.styles[i];
+    const acc = Boolean(extraAccent && extraAccent.has(i));
+    const last = runs[runs.length - 1];
+    if (last && last.style === style && last.acc === acc) last.text += word.para[i];
+    else runs.push({ text: word.para[i], style, acc });
+  }
+  return runs;
+}
+
+/* Жирный: **…**, а на Lime и Coral ещё и акцент — там цветом выделять нельзя. */
+function runBold(style) {
+  return style.b || (style.a && (RICH_BG === C.lime || RICH_BG === C.coral));
+}
+
+function runFont(ctx, st, style, size) {
+  return setFont(ctx, runBold(style) ? Object.assign({}, st, { weight: boldWeight(st) }) : st, size);
+}
+
+function richWordWidth(ctx, st, word) {
+  let w = 0;
+  for (const r of richRuns(word)) w += measureWidth(ctx, r.text, runFont(ctx, st, r.style, st.size));
+  return w;
+}
+
+/* Перенос строк с разметкой: те же правила склейки, ширина — с учётом жирного. */
+function layoutRich(ctx, text, st, maxWidth) {
+  const size = st.size;
+  const lineH = size * st.lh;
+  const spaceW = measureWidth(ctx, ' ', setFont(ctx, st, size));
+  const lines = [];
+  const rich = [];
+  const paragraphs = (st.upper ? text.toUpperCase() : text).split('\n');
+  for (const raw of paragraphs) {
+    const { plain, styles } = parseRich(raw);
+    const words = [];
+    for (let m, re = /[^ \t]+/g; (m = re.exec(plain));) {
+      words.push({ text: m[0], s: m.index, e: m.index + m[0].length, styles, para: plain });
+    }
+    if (!words.length) { lines.push(''); rich.push([]); continue; }
+    words.forEach(w => { w.w = richWordWidth(ctx, st, w); });
+    let k = 0;
+    const groups = glueGroups(words.map(w => w.text)).map(g => {
+      const ws = words.slice(k, k + g.words.length);
+      k += g.words.length;
+      return ws;
+    });
+    const widthOf = ws => ws.reduce((a, w) => a + w.w, 0) + spaceW * Math.max(0, ws.length - 1);
+    let line = [];
+    for (const g of groups) {
+      // склейка шире всей строки — лучше разорвать её, чем вылезти за край
+      const pieces = g.length > 1 && widthOf(g) > maxWidth * 1.001 ? g.map(w => [w]) : [g];
+      for (const piece of pieces) {
+        if (line.length && widthOf(line) + spaceW + widthOf(piece) > maxWidth * 1.001) {
+          lines.push(line.map(w => w.text).join(' '));
+          rich.push(line);
+          line = piece.slice();
+        } else {
+          line = line.concat(piece);
+        }
+      }
+    }
+    lines.push(line.map(w => w.text).join(' '));
+    rich.push(line);
+  }
+  while (lines.length > 1 && !lines[lines.length - 1]) { lines.pop(); rich.pop(); }
+  if (lines.length === 1 && !lines[0]) { lines.length = 0; rich.length = 0; }
+  const widths = rich.map(ws => ws.reduce((a, w) => a + w.w, 0) + spaceW * Math.max(0, ws.length - 1));
+  const maxW = widths.length ? Math.max(...widths) : 0;
+  return {
+    lines, rich, widths, size, lineH, st, maxW, spaceW,
+    tooWide: maxW > maxWidth * 1.02,
+    h: lines.length * lineH,
+    draw(ctx2, x, y, opts = {}) { drawLaidText(ctx2, this, x, y, opts); },
+  };
+}
+
+/* Светлый ли цвет текста (#hex или rgba(...)) — значит, фон тёмный. */
+function isLightText(color) {
+  const str = String(color);
+  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(str);
+  let r, g, b;
+  if (m) [r, g, b] = [+m[1], +m[2], +m[3]];
+  else if (/^#?[0-9a-f]{6}$/i.test(str)) {
+    const n = parseInt(str.replace('#', ''), 16);
+    [r, g, b] = [n >> 16 & 255, n >> 8 & 255, n & 255];
+  } else return false;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b >= 140;
+}
+
+function richColor(style, base, accentColor) {
+  const light = isLightText(base);
+  if (style.c) {
+    switch (style.c) {
+      case 'coral': return light ? C.coral : C.coralText;
+      case 'blue': return light ? C.bridgeLight : C.blue;
+      default: return C[style.c] || base;
+    }
+  }
+  if (style.a || style.acc) return accentColor;
+  return base;
+}
+
+function drawRich(ctx, lt, x, y, opts = {}) {
+  const { st, size, lineH } = lt;
+  const m = METRICS[st.family];
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  const base = opts.color || st.color || C.ink;
+  const align = opts.align || st.align || 'left';
+  const width = opts.width ?? lt.maxW;
+  // акцент по брендбуку: Lime на тёмном, синий на светлом; на Lime и Coral — только Ink, тогда акцент — жирный
+  const flatBg = RICH_BG === C.lime || RICH_BG === C.coral;
+  let accent = opts.accentColor || (isLightText(base) ? C.lime : base === C.blue ? C.ink : C.blue);
+  if (flatBg && !opts.accentColor) accent = base;
+  const markBg = RICH_BG === C.lime ? C.white : C.lime;
+  const word = opts.accent && opts.accent.word ? opts.accent.word.trim().toLowerCase() : '';
+  lt.lines.forEach((line, i) => {
+    const ws = lt.rich[i];
+    if (!ws || !ws.length) return;
+    const top = y + i * lineH;
+    const baseline = top + (lineH - size * (m.ascent + m.descent)) / 2 + size * m.ascent;
+    let lx = x;
+    if (align === 'center') lx = x + (width - lt.widths[i]) / 2;
+    else if (align === 'right') lx = x + width - lt.widths[i];
+    // старое поле «Ключевое слово» тоже работает поверх разметки
+    let extra = null;
+    if (word) {
+      extra = new Set();
+      const hay = line.toLowerCase();
+      let off = 0;
+      const offsets = ws.map(w => { const o = off; off += w.text.length + 1; return o; });
+      for (let p = hay.indexOf(word); p >= 0; p = hay.indexOf(word, p + word.length)) {
+        ws.forEach((w, wi) => {
+          for (let c = 0; c < w.text.length; c++) if (offsets[wi] + c >= p && offsets[wi] + c < p + word.length) extra.add(w.s + c);
+        });
+      }
+    }
+    // сначала подложки маркера, потом текст — чтобы подложка не закрыла соседнее слово
+    const pads = size * 0.12;
+    let mx = lx;
+    ws.forEach((w, wi) => {
+      let cx = mx;
+      for (const r of richRuns(w, extra)) {
+        const rw = measureWidth(ctx, r.text, runFont(ctx, st, r.style, size));
+        if (r.style.m) {
+          const next = ws[wi + 1];
+          const joins = r === richRuns(w, extra).slice(-1)[0] && next && next.styles[next.s].m;
+          fillRR(ctx, cx - pads, top + (lineH - size * 1.18) / 2, rw + pads * 2 + (joins ? lt.spaceW : 0), size * 1.18, size * 0.2, markBg);
+        }
+        cx += rw;
+      }
+      mx += w.w + lt.spaceW;
+    });
+    for (const w of ws) {
+      for (const r of richRuns(w, extra)) {
+        const spacing = runFont(ctx, st, r.style, size);
+        ctx.fillStyle = r.style.m && !r.style.c ? C.ink : richColor(r.style, base, accent);
+        drawSpaced(ctx, r.text, lx, baseline, spacing);
+        lx += measureWidth(ctx, r.text, spacing);
+      }
+      lx += lt.spaceW;
+    }
+  });
 }
 
 /* ------------------------------------------------------------- фигуры */

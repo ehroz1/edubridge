@@ -229,6 +229,8 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   const logoOff = look.logo === 'none';
   let builtinLogo = false;
   let placeDef = null;
+  let bgColorVal = null;
+  RICH_BG = null;
   const warnings = [];
   const slots = [];
   const warn = msg => { if (!warnings.includes(msg)) warnings.push(msg); };
@@ -338,7 +340,9 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
       env.bgColor = th.bg;
       return th;
     },
-    bgColor: null,
+    // фон слайда: от него зависят плашки, акценты и маркер в тексте
+    get bgColor() { return bgColorVal; },
+    set bgColor(v) { bgColorVal = v; RICH_BG = v; },
     pill(x, y, rubric, surface, o = {}) {
       elements.add('pill');
       if (hidden.has('pill')) return { w: 0, h: 0 };
@@ -2029,6 +2033,137 @@ function doImport() {
   say(`Готово: ${slideCountText(state.draft.slides.length)}. Проверь категории и добавь логотипы приложений, если нужно`);
 }
 
+/* -------------------------------------------- форматирование текста */
+
+/*
+ * Панель над полем ввода: выдели слова и нажми кнопку — вокруг встанут
+ * значки разметки (*акцент*, **жирный**, ==маркер==, {coral}цвет{/}).
+ * Панель одна на всю форму и встаёт над тем полем, где курсор.
+ */
+const FMT_COLORS = [['blue', 'Bridge Blue', '#0A34F5'], ['lime', 'Lime', '#C8F169'], ['coral', 'Coral', '#FF5A36'],
+  ['sky', 'Sky', '#9DB0FF'], ['ink', 'Ink', '#121418'], ['white', 'Белый', '#FFFFFF']];
+let fmtTarget = null;
+
+function fmtEligible(node) {
+  return Boolean(node && node.closest && node.closest('#form') &&
+    (node.tagName === 'TEXTAREA' || (node.tagName === 'INPUT' && node.type === 'text')));
+}
+
+function buildFmtBar() {
+  const bar = el.fmtBar;
+  bar.innerHTML = '';
+  const btn = (label, title, onClick, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = cls;
+    b.innerHTML = label;
+    b.title = title;
+    // кнопка не забирает фокус — выделение в поле остаётся
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', onClick);
+    bar.appendChild(b);
+    return b;
+  };
+  btn('<span class="fmt-acc">А</span> Акцент', 'Акцент цветом по брендбуку: Lime на тёмном, синий на светлом', () => fmtWrap('*', '*'));
+  btn('<b>Ж</b>', 'Жирный (⌘B)', () => fmtWrap('**', '**'));
+  btn('<span class="fmt-mark">М</span>', 'Маркер: слово на подложке Lime', () => fmtWrap('==', '=='));
+  const colorBtn = btn('<span class="fmt-dot"></span>Цвет', 'Цвет из палитры брендбука', () => { colors.hidden = !colors.hidden; });
+  colorBtn.setAttribute('aria-haspopup', 'true');
+  btn('Сбросить', 'Убрать форматирование из выделения (или из всего поля)', fmtClear, 'fmt-clear');
+  const colors = document.createElement('div');
+  colors.className = 'fmt-colors';
+  colors.hidden = true;
+  for (const [key, name, hex] of FMT_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = name;
+    b.innerHTML = `<i style="background:${hex}"></i>`;
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', () => { colors.hidden = true; fmtWrap(`{${key}}`, '{/}', true); });
+    colors.appendChild(b);
+  }
+  bar.appendChild(colors);
+}
+
+function showFmtBar(input) {
+  fmtTarget = input;
+  const bar = el.fmtBar;
+  const panel = el.form.closest('.form-panel');
+  bar.hidden = false;
+  bar.querySelector('.fmt-colors').hidden = true;
+  const pr = panel.getBoundingClientRect();
+  const ir = input.getBoundingClientRect();
+  let top = ir.top - pr.top + panel.scrollTop - bar.offsetHeight - 6;
+  if (top < panel.scrollTop + 4) top = ir.bottom - pr.top + panel.scrollTop + 6;
+  bar.style.top = top + 'px';
+  bar.style.left = Math.max(8, ir.left - pr.left) + 'px';
+}
+
+function hideFmtBar() {
+  el.fmtBar.hidden = true;
+  fmtTarget = null;
+}
+
+/* Применяет правку к полю и сообщает форме, как будто это ввод с клавиатуры. */
+function fmtApply(input, value, selStart, selEnd) {
+  input.value = value;
+  input.setSelectionRange(selStart, selEnd);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.focus();
+}
+
+function fmtSelection(input) {
+  const v = input.value;
+  let s = input.selectionStart, e = input.selectionEnd;
+  if (s === e) {
+    // без выделения — слово под курсором
+    s = v.slice(0, s).search(/\S*$/);
+    e = e + v.slice(e).match(/^\S*/)[0].length;
+  }
+  while (s < e && /\s/.test(v[s])) s++;
+  while (e > s && /\s/.test(v[e - 1])) e--;
+  return [s, e];
+}
+
+function fmtWrap(open, close, anyColor = false) {
+  const input = fmtTarget;
+  if (!input) return;
+  const v = input.value;
+  const [s, e] = fmtSelection(input);
+  if (s === e) { say('Выдели слова, которые нужно оформить'); return; }
+  const before = v.slice(0, s), sel = v.slice(s, e), after = v.slice(e);
+  // уже оформлено так же — снимаем
+  const openRe = anyColor ? /\{[a-z]+\}$/ : null;
+  const wrappedOpen = anyColor ? (before.match(openRe) || [''])[0] : (before.endsWith(open) && !(open === '*' && before.endsWith('**')) ? open : '');
+  if (wrappedOpen && after.startsWith(close) && !(close === '*' && after.startsWith('**') && !before.endsWith('***'))) {
+    const nb = before.slice(0, before.length - wrappedOpen.length);
+    const na = after.slice(close.length);
+    if (!anyColor || wrappedOpen === open) {
+      fmtApply(input, nb + sel + na, nb.length, nb.length + sel.length);
+      return;
+    }
+    // другой цвет — меняем цвет
+    fmtApply(input, nb + open + sel + close + na, nb.length + open.length, nb.length + open.length + sel.length);
+    return;
+  }
+  // разметка работает внутри абзаца — каждую строку выделения оформляем отдельно
+  const wrapped = sel.split('\n').map(line => (line.trim() ? line.replace(/^(\s*)(.*?)(\s*)$/, `$1${open}$2${close}$3`) : line)).join('\n');
+  fmtApply(input, before + wrapped + after, s, s + wrapped.length);
+}
+
+function fmtClear() {
+  const input = fmtTarget;
+  if (!input) return;
+  const v = input.value;
+  let s = input.selectionStart, e = input.selectionEnd;
+  if (s === e) { s = 0; e = v.length; }
+  // захватываем значки вплотную к выделению, чтобы не остались «осиротевшие»
+  while (s > 0 && /[*={}a-z/]/.test(v[s - 1]) && /(\*|=|\{[a-z/]*\}?)$/.test(v.slice(0, s))) s--;
+  while (e < v.length && /[*={}a-z/]/.test(v[e]) && /^(\*|=|\{?[a-z/]*\})/.test(v.slice(e))) e++;
+  const cleaned = v.slice(s, e).replace(RICH_TOKEN, '');
+  fmtApply(input, v.slice(0, s) + cleaned + v.slice(e), s, s + cleaned.length);
+}
+
 /* ------------------------------------------------------------ оформление */
 
 /* Элементы дизайна, которые можно скрыть (шаблон отмечает их через env.show). */
@@ -2898,7 +3033,7 @@ async function exportVideoSlide(slide, index, onProgress) {
 
 function exportName(slide, i) {
   const def = KINDS[slide.kind];
-  const label = slide.kind === 'highlight' && slide.data.label ? slide.data.label : def.name;
+  const label = slide.kind === 'highlight' && slide.data.label ? stripRich(slide.data.label) : def.name;
   return `${String(i + 1).padStart(2, '0')}-${slug(label)}`;
 }
 
@@ -3030,20 +3165,26 @@ const HELP = `
 <li>По брендбуку оба логотипа в монохроме — галочка «Оба логотипа в монохроме» включена по умолчанию.</li>
 <li>Поле <b>«Флаги — по желанию»</b> есть в каждом шаблоне: до 3 стран, флаги встают в плашку рубрики или в свободный угол.</li>
 </ul>
-<h3>5. Оформление слайда</h3>
+<h3>5. Форматирование текста</h3>
+<ul>
+<li>Поставь курсор в поле — над ним появится панель. Выдели слова и нажми: <b>Акцент</b> (цвет по брендбуку: Lime на тёмном, синий на светлом), <b>Ж</b> — жирный (<kbd>⌘B</kbd>), <b>М</b> — маркер на подложке Lime, <b>Цвет</b> — любой цвет палитры. Повторное нажатие снимает оформление, «Сбросить» убирает всё.</li>
+<li>В поле оформление видно значками: <code>*акцент*</code>, <code>**жирный**</code>, <code>==маркер==</code>, <code>{coral}цвет{/}</code> — их можно писать и руками. На карточке значков нет.</li>
+<li>На Lime и Coral по брендбуку текст только Ink — там акцент становится жирным.</li>
+</ul>
+<h3>6. Оформление слайда</h3>
 <ul>
 <li>Блок <b>Оформление</b> под полями: фон обложки из палитры брендбука (текст сам становится Ink или белым), логотип edubridge — по макету, скрыть или в угол (<b>«В свободный угол»</b> сам найдёт место, где логотип ничего не накроет).</li>
 <li><b>Расположение текста</b> — сетка 3×3: блок вверх, по центру или вниз, строки по левому краю, по центру или по правому. В макетах, где текст привязан к фото или таблице, — только выравнивание строк.</li>
 <li>Плашку можно скрыть, переписать и перекрасить. Галочками в «Показывать» убираются подзаголовок, счётчик, подписи, декор и кнопки.</li>
 <li>У каждого заголовка есть поле <b>«Подзаголовок — по желанию»</b>. <b>Применить ко всем слайдам</b> переносит оформление на весь материал.</li>
 </ul>
-<h3>6. Если текст не влезает</h3>
+<h3>7. Если текст не влезает</h3>
 <ul>
 <li>Под превью появится предупреждение: «больше 3 строк», «не помещается», «мало пикселей».</li>
 <li>В блоке <b>Подстройка текста</b> можно уменьшить кегль и интерлиньяж, кнопка <b>Уместить</b> сделает это сама.</li>
 <li>Кнопка с сеткой в верхней панели показывает поля, колонки и безопасные зоны: обрезку 3:4 в профиле, зоны интерфейса Stories, зону обложки Reels.</li>
 </ul>
-<h3>7. Экспорт</h3>
+<h3>8. Экспорт</h3>
 <ul>
 <li><b>Экспорт</b> справа сверху: PNG или JPG, 1× или 2×, все слайды одним ZIP, по одному или только текущий. <kbd>⌘S</kbd> — все слайды.</li>
 <li>Титры для Reels и плашка спикера без фона выгружаются в PNG с прозрачностью — для монтажа.</li>
@@ -3069,6 +3210,16 @@ function openHelp() {
 
 function collectElements() {
   for (const node of document.querySelectorAll('[id]')) el[node.id] = node;
+  buildFmtBar();
+  el.form.addEventListener('focusin', e => { if (fmtEligible(e.target)) showFmtBar(e.target); });
+  el.form.addEventListener('focusout', () => {
+    setTimeout(() => { if (!fmtEligible(document.activeElement)) hideFmtBar(); }, 0);
+  });
+  el.form.addEventListener('keydown', e => {
+    if (!fmtEligible(e.target) || !(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'b' || k === 'и') { e.preventDefault(); fmtTarget = e.target; fmtWrap('**', '**'); }
+  });
 }
 
 function closeTopModal() {

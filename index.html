@@ -417,7 +417,7 @@ h1, h2, h3, p { margin: 0; }
 .stage-nav { display: flex; align-items: center; gap: 4px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 
 /* ---- форма справа */
-.form-panel { overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface); padding: 22px 22px 60px; }
+.form-panel { position: relative; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface); padding: 22px 22px 60px; }
 .form-head { margin-bottom: 18px; }
 .eyebrow { font-size: 13px; color: var(--muted); font-weight: 600; }
 .form-head h2 { font: 700 22px/1.2 EBOnest, sans-serif; letter-spacing: -0.01em; margin-top: 2px; }
@@ -498,6 +498,27 @@ h1, h2, h3, p { margin: 0; }
 .tune-role { display: flex; flex-direction: column; gap: 6px; }
 .tune-role .rname { font-weight: 600; font-size: 13px; }
 .tune > .hint { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+/* ---- панель форматирования над полем */
+.fmt-bar {
+  position: absolute; z-index: 20; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px;
+  border-radius: 14px; background: var(--surface); box-shadow: 0 6px 24px rgba(18,20,24,.16), 0 0 0 1px var(--line);
+  max-width: calc(100% - 16px);
+}
+.fmt-bar[hidden] { display: none; }
+.fmt-bar > button {
+  height: 32px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent;
+  font-size: 13px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 6px;
+}
+.fmt-bar > button:hover { background: var(--hover); }
+.fmt-bar .fmt-clear { color: var(--muted); }
+.fmt-acc { color: var(--blue); font-weight: 800; }
+.fmt-mark { background: #C8F169; color: #121418; border-radius: 4px; padding: 0 4px; font-weight: 700; }
+.fmt-dot { width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(#0A34F5 0 33%, #FF5A36 0 66%, #C8F169 0); }
+.fmt-colors { display: flex; gap: 6px; width: 100%; padding: 4px 6px 2px; }
+.fmt-colors[hidden] { display: none; }
+.fmt-colors button { width: 30px; height: 30px; border: 0; border-radius: 50%; padding: 0; background: transparent; display: grid; place-items: center; }
+.fmt-colors i { width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(18,20,24,.2); }
+
 /* ---- оформление слайда: фон, логотип, плашка, скрытые элементы */
 .look { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 16px; }
 .look[hidden] { display: none; }
@@ -830,6 +851,7 @@ h1, h2, h3, p { margin: 0; }
         <p class="eyebrow" id="formEyebrow"></p>
         <h2 id="formTitle"></h2>
       </div>
+      <div class="fmt-bar" id="fmtBar" role="toolbar" aria-label="Форматирование текста" hidden></div>
       <div class="form" id="form"></div>
       <section class="look" id="look" aria-label="Оформление слайда"></section>
       <div class="tune" id="tune"></div>
@@ -1009,6 +1031,7 @@ function glueGroups(words) {
  * и методом draw.
  */
 function layoutText(ctx, text, st, maxWidth) {
+  if (hasRich(text)) return layoutRich(ctx, String(text), st, maxWidth);
   const size = st.size;
   const spacing = setFont(ctx, st, size);
   const lineH = size * st.lh;
@@ -1054,6 +1077,7 @@ function layoutText(ctx, text, st, maxWidth) {
 
 /* Рисует разложенный текст. opts: width (для выключки), align, color, accent: {word, color}. */
 function drawLaidText(ctx, lt, x, y, opts = {}) {
+  if (lt.rich) { drawRich(ctx, lt, x, y, opts); return; }
   const { st, size, lineH } = lt;
   const m = METRICS[st.family];
   const spacing = setFont(ctx, st, size);
@@ -1108,6 +1132,7 @@ function splitAccent(line, word) {
 
 /* Одна строка без переноса — для подписей, дат, ников. Возвращает ширину. */
 function textWidth(ctx, text, st) {
+  if (hasRich(text)) return layoutRich(ctx, String(text).replace(/\n/g, ' '), st, 1e6).maxW;
   const spacing = setFont(ctx, st, st.size);
   return measureWidth(ctx, String(text ?? ''), spacing);
 }
@@ -1116,6 +1141,242 @@ function drawLine(ctx, text, x, y, st, opts = {}) {
   const lt = layoutText(ctx, String(text ?? '').replace(/\n/g, ' '), st, 1e6);
   lt.draw(ctx, x, y, opts);
   return lt;
+}
+
+/* ------------------------------------------------- форматирование текста */
+
+/*
+ * Разметка в полях формы (её ставят кнопки над полем):
+ *   *акцент*  — цвет акцента по брендбуку (Lime на тёмном, Bridge Blue на светлом)
+ *   **жирный** — Onest 700 (Unbounded — 700)
+ *   ==маркер== — слово на подложке Lime
+ *   {coral}цвет{/} — цвет из палитры: blue, lime, coral, sky, ink, white
+ * Непарные значки остаются в тексте как есть.
+ */
+const RICH_COLORS = ['blue', 'lime', 'coral', 'sky', 'ink', 'white'];
+const RICH_TOKEN = /\*\*|\*|==|\{(?:blue|lime|coral|sky|ink|white)\}|\{\/\}/g;
+const RICH_TEST = /\*|==|\{(?:blue|lime|coral|sky|ink|white|\/)\}/;
+/* Фон слайда — от него зависят акцент и маркер; задаётся в renderSlide через env.cover(). */
+let RICH_BG = null;
+
+function hasRich(text) { return typeof text === 'string' && RICH_TEST.test(text); }
+
+/* Убирает разметку — для имён файлов и подписей в интерфейсе. */
+function stripRich(text) {
+  return String(text ?? '').split('\n').map(p => parseRich(p).plain).join('\n');
+}
+
+/* Абзац → текст без значков и стиль каждого символа { b, a, m, c }. */
+function parseRich(para) {
+  const toks = [];
+  RICH_TOKEN.lastIndex = 0;
+  for (let m; (m = RICH_TOKEN.exec(para));) toks.push({ i: m.index, s: m[0] });
+  const used = new Set();
+  for (const kind of ['**', '*', '==']) {
+    let open = null;
+    for (const t of toks) {
+      if (t.s !== kind) continue;
+      if (open) { used.add(open); used.add(t); open = null; } else open = t;
+    }
+  }
+  let open = null;
+  for (const t of toks) {
+    if (t.s.length > 3 && t.s !== '{/}') open = t;
+    else if (t.s === '{/}' && open) { used.add(open); used.add(t); open = null; }
+  }
+  let plain = '';
+  const styles = [];
+  let cur = { b: false, a: false, m: false, c: null };
+  let pos = 0;
+  const push = upto => {
+    for (const ch of para.slice(pos, upto)) { plain += ch; for (let k = 0; k < ch.length; k++) styles.push(cur); }
+  };
+  for (const t of toks) {
+    if (!used.has(t)) continue;
+    push(t.i);
+    cur = Object.assign({}, cur);
+    if (t.s === '**') cur.b = !cur.b;
+    else if (t.s === '*') cur.a = !cur.a;
+    else if (t.s === '==') cur.m = !cur.m;
+    else if (t.s === '{/}') cur.c = null;
+    else cur.c = t.s.slice(1, -1);
+    pos = t.i + t.s.length;
+  }
+  push(para.length);
+  return { plain, styles };
+}
+
+function boldWeight(st) {
+  return Math.min(st.family === 'unb' ? 700 : 800, Math.max(700, st.weight + 200));
+}
+
+/* Куски слова с одинаковым стилем: [{ text, style }]. */
+function richRuns(word, extraAccent) {
+  const runs = [];
+  for (let i = word.s; i < word.e; i++) {
+    const style = word.styles[i];
+    const acc = Boolean(extraAccent && extraAccent.has(i));
+    const last = runs[runs.length - 1];
+    if (last && last.style === style && last.acc === acc) last.text += word.para[i];
+    else runs.push({ text: word.para[i], style, acc });
+  }
+  return runs;
+}
+
+/* Жирный: **…**, а на Lime и Coral ещё и акцент — там цветом выделять нельзя. */
+function runBold(style) {
+  return style.b || (style.a && (RICH_BG === C.lime || RICH_BG === C.coral));
+}
+
+function runFont(ctx, st, style, size) {
+  return setFont(ctx, runBold(style) ? Object.assign({}, st, { weight: boldWeight(st) }) : st, size);
+}
+
+function richWordWidth(ctx, st, word) {
+  let w = 0;
+  for (const r of richRuns(word)) w += measureWidth(ctx, r.text, runFont(ctx, st, r.style, st.size));
+  return w;
+}
+
+/* Перенос строк с разметкой: те же правила склейки, ширина — с учётом жирного. */
+function layoutRich(ctx, text, st, maxWidth) {
+  const size = st.size;
+  const lineH = size * st.lh;
+  const spaceW = measureWidth(ctx, ' ', setFont(ctx, st, size));
+  const lines = [];
+  const rich = [];
+  const paragraphs = (st.upper ? text.toUpperCase() : text).split('\n');
+  for (const raw of paragraphs) {
+    const { plain, styles } = parseRich(raw);
+    const words = [];
+    for (let m, re = /[^ \t]+/g; (m = re.exec(plain));) {
+      words.push({ text: m[0], s: m.index, e: m.index + m[0].length, styles, para: plain });
+    }
+    if (!words.length) { lines.push(''); rich.push([]); continue; }
+    words.forEach(w => { w.w = richWordWidth(ctx, st, w); });
+    let k = 0;
+    const groups = glueGroups(words.map(w => w.text)).map(g => {
+      const ws = words.slice(k, k + g.words.length);
+      k += g.words.length;
+      return ws;
+    });
+    const widthOf = ws => ws.reduce((a, w) => a + w.w, 0) + spaceW * Math.max(0, ws.length - 1);
+    let line = [];
+    for (const g of groups) {
+      // склейка шире всей строки — лучше разорвать её, чем вылезти за край
+      const pieces = g.length > 1 && widthOf(g) > maxWidth * 1.001 ? g.map(w => [w]) : [g];
+      for (const piece of pieces) {
+        if (line.length && widthOf(line) + spaceW + widthOf(piece) > maxWidth * 1.001) {
+          lines.push(line.map(w => w.text).join(' '));
+          rich.push(line);
+          line = piece.slice();
+        } else {
+          line = line.concat(piece);
+        }
+      }
+    }
+    lines.push(line.map(w => w.text).join(' '));
+    rich.push(line);
+  }
+  while (lines.length > 1 && !lines[lines.length - 1]) { lines.pop(); rich.pop(); }
+  if (lines.length === 1 && !lines[0]) { lines.length = 0; rich.length = 0; }
+  const widths = rich.map(ws => ws.reduce((a, w) => a + w.w, 0) + spaceW * Math.max(0, ws.length - 1));
+  const maxW = widths.length ? Math.max(...widths) : 0;
+  return {
+    lines, rich, widths, size, lineH, st, maxW, spaceW,
+    tooWide: maxW > maxWidth * 1.02,
+    h: lines.length * lineH,
+    draw(ctx2, x, y, opts = {}) { drawLaidText(ctx2, this, x, y, opts); },
+  };
+}
+
+/* Светлый ли цвет текста (#hex или rgba(...)) — значит, фон тёмный. */
+function isLightText(color) {
+  const str = String(color);
+  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(str);
+  let r, g, b;
+  if (m) [r, g, b] = [+m[1], +m[2], +m[3]];
+  else if (/^#?[0-9a-f]{6}$/i.test(str)) {
+    const n = parseInt(str.replace('#', ''), 16);
+    [r, g, b] = [n >> 16 & 255, n >> 8 & 255, n & 255];
+  } else return false;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b >= 140;
+}
+
+function richColor(style, base, accentColor) {
+  const light = isLightText(base);
+  if (style.c) {
+    switch (style.c) {
+      case 'coral': return light ? C.coral : C.coralText;
+      case 'blue': return light ? C.bridgeLight : C.blue;
+      default: return C[style.c] || base;
+    }
+  }
+  if (style.a || style.acc) return accentColor;
+  return base;
+}
+
+function drawRich(ctx, lt, x, y, opts = {}) {
+  const { st, size, lineH } = lt;
+  const m = METRICS[st.family];
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  const base = opts.color || st.color || C.ink;
+  const align = opts.align || st.align || 'left';
+  const width = opts.width ?? lt.maxW;
+  // акцент по брендбуку: Lime на тёмном, синий на светлом; на Lime и Coral — только Ink, тогда акцент — жирный
+  const flatBg = RICH_BG === C.lime || RICH_BG === C.coral;
+  let accent = opts.accentColor || (isLightText(base) ? C.lime : base === C.blue ? C.ink : C.blue);
+  if (flatBg && !opts.accentColor) accent = base;
+  const markBg = RICH_BG === C.lime ? C.white : C.lime;
+  const word = opts.accent && opts.accent.word ? opts.accent.word.trim().toLowerCase() : '';
+  lt.lines.forEach((line, i) => {
+    const ws = lt.rich[i];
+    if (!ws || !ws.length) return;
+    const top = y + i * lineH;
+    const baseline = top + (lineH - size * (m.ascent + m.descent)) / 2 + size * m.ascent;
+    let lx = x;
+    if (align === 'center') lx = x + (width - lt.widths[i]) / 2;
+    else if (align === 'right') lx = x + width - lt.widths[i];
+    // старое поле «Ключевое слово» тоже работает поверх разметки
+    let extra = null;
+    if (word) {
+      extra = new Set();
+      const hay = line.toLowerCase();
+      let off = 0;
+      const offsets = ws.map(w => { const o = off; off += w.text.length + 1; return o; });
+      for (let p = hay.indexOf(word); p >= 0; p = hay.indexOf(word, p + word.length)) {
+        ws.forEach((w, wi) => {
+          for (let c = 0; c < w.text.length; c++) if (offsets[wi] + c >= p && offsets[wi] + c < p + word.length) extra.add(w.s + c);
+        });
+      }
+    }
+    // сначала подложки маркера, потом текст — чтобы подложка не закрыла соседнее слово
+    const pads = size * 0.12;
+    let mx = lx;
+    ws.forEach((w, wi) => {
+      let cx = mx;
+      for (const r of richRuns(w, extra)) {
+        const rw = measureWidth(ctx, r.text, runFont(ctx, st, r.style, size));
+        if (r.style.m) {
+          const next = ws[wi + 1];
+          const joins = r === richRuns(w, extra).slice(-1)[0] && next && next.styles[next.s].m;
+          fillRR(ctx, cx - pads, top + (lineH - size * 1.18) / 2, rw + pads * 2 + (joins ? lt.spaceW : 0), size * 1.18, size * 0.2, markBg);
+        }
+        cx += rw;
+      }
+      mx += w.w + lt.spaceW;
+    });
+    for (const w of ws) {
+      for (const r of richRuns(w, extra)) {
+        const spacing = runFont(ctx, st, r.style, size);
+        ctx.fillStyle = r.style.m && !r.style.c ? C.ink : richColor(r.style, base, accent);
+        drawSpaced(ctx, r.text, lx, baseline, spacing);
+        lx += measureWidth(ctx, r.text, spacing);
+      }
+      lx += lt.spaceW;
+    }
+  });
 }
 
 /* ------------------------------------------------------------- фигуры */
@@ -4350,6 +4611,8 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   const logoOff = look.logo === 'none';
   let builtinLogo = false;
   let placeDef = null;
+  let bgColorVal = null;
+  RICH_BG = null;
   const warnings = [];
   const slots = [];
   const warn = msg => { if (!warnings.includes(msg)) warnings.push(msg); };
@@ -4459,7 +4722,9 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
       env.bgColor = th.bg;
       return th;
     },
-    bgColor: null,
+    // фон слайда: от него зависят плашки, акценты и маркер в тексте
+    get bgColor() { return bgColorVal; },
+    set bgColor(v) { bgColorVal = v; RICH_BG = v; },
     pill(x, y, rubric, surface, o = {}) {
       elements.add('pill');
       if (hidden.has('pill')) return { w: 0, h: 0 };
@@ -6150,6 +6415,137 @@ function doImport() {
   say(`Готово: ${slideCountText(state.draft.slides.length)}. Проверь категории и добавь логотипы приложений, если нужно`);
 }
 
+/* -------------------------------------------- форматирование текста */
+
+/*
+ * Панель над полем ввода: выдели слова и нажми кнопку — вокруг встанут
+ * значки разметки (*акцент*, **жирный**, ==маркер==, {coral}цвет{/}).
+ * Панель одна на всю форму и встаёт над тем полем, где курсор.
+ */
+const FMT_COLORS = [['blue', 'Bridge Blue', '#0A34F5'], ['lime', 'Lime', '#C8F169'], ['coral', 'Coral', '#FF5A36'],
+  ['sky', 'Sky', '#9DB0FF'], ['ink', 'Ink', '#121418'], ['white', 'Белый', '#FFFFFF']];
+let fmtTarget = null;
+
+function fmtEligible(node) {
+  return Boolean(node && node.closest && node.closest('#form') &&
+    (node.tagName === 'TEXTAREA' || (node.tagName === 'INPUT' && node.type === 'text')));
+}
+
+function buildFmtBar() {
+  const bar = el.fmtBar;
+  bar.innerHTML = '';
+  const btn = (label, title, onClick, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = cls;
+    b.innerHTML = label;
+    b.title = title;
+    // кнопка не забирает фокус — выделение в поле остаётся
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', onClick);
+    bar.appendChild(b);
+    return b;
+  };
+  btn('<span class="fmt-acc">А</span> Акцент', 'Акцент цветом по брендбуку: Lime на тёмном, синий на светлом', () => fmtWrap('*', '*'));
+  btn('<b>Ж</b>', 'Жирный (⌘B)', () => fmtWrap('**', '**'));
+  btn('<span class="fmt-mark">М</span>', 'Маркер: слово на подложке Lime', () => fmtWrap('==', '=='));
+  const colorBtn = btn('<span class="fmt-dot"></span>Цвет', 'Цвет из палитры брендбука', () => { colors.hidden = !colors.hidden; });
+  colorBtn.setAttribute('aria-haspopup', 'true');
+  btn('Сбросить', 'Убрать форматирование из выделения (или из всего поля)', fmtClear, 'fmt-clear');
+  const colors = document.createElement('div');
+  colors.className = 'fmt-colors';
+  colors.hidden = true;
+  for (const [key, name, hex] of FMT_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = name;
+    b.innerHTML = `<i style="background:${hex}"></i>`;
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', () => { colors.hidden = true; fmtWrap(`{${key}}`, '{/}', true); });
+    colors.appendChild(b);
+  }
+  bar.appendChild(colors);
+}
+
+function showFmtBar(input) {
+  fmtTarget = input;
+  const bar = el.fmtBar;
+  const panel = el.form.closest('.form-panel');
+  bar.hidden = false;
+  bar.querySelector('.fmt-colors').hidden = true;
+  const pr = panel.getBoundingClientRect();
+  const ir = input.getBoundingClientRect();
+  let top = ir.top - pr.top + panel.scrollTop - bar.offsetHeight - 6;
+  if (top < panel.scrollTop + 4) top = ir.bottom - pr.top + panel.scrollTop + 6;
+  bar.style.top = top + 'px';
+  bar.style.left = Math.max(8, ir.left - pr.left) + 'px';
+}
+
+function hideFmtBar() {
+  el.fmtBar.hidden = true;
+  fmtTarget = null;
+}
+
+/* Применяет правку к полю и сообщает форме, как будто это ввод с клавиатуры. */
+function fmtApply(input, value, selStart, selEnd) {
+  input.value = value;
+  input.setSelectionRange(selStart, selEnd);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.focus();
+}
+
+function fmtSelection(input) {
+  const v = input.value;
+  let s = input.selectionStart, e = input.selectionEnd;
+  if (s === e) {
+    // без выделения — слово под курсором
+    s = v.slice(0, s).search(/\S*$/);
+    e = e + v.slice(e).match(/^\S*/)[0].length;
+  }
+  while (s < e && /\s/.test(v[s])) s++;
+  while (e > s && /\s/.test(v[e - 1])) e--;
+  return [s, e];
+}
+
+function fmtWrap(open, close, anyColor = false) {
+  const input = fmtTarget;
+  if (!input) return;
+  const v = input.value;
+  const [s, e] = fmtSelection(input);
+  if (s === e) { say('Выдели слова, которые нужно оформить'); return; }
+  const before = v.slice(0, s), sel = v.slice(s, e), after = v.slice(e);
+  // уже оформлено так же — снимаем
+  const openRe = anyColor ? /\{[a-z]+\}$/ : null;
+  const wrappedOpen = anyColor ? (before.match(openRe) || [''])[0] : (before.endsWith(open) && !(open === '*' && before.endsWith('**')) ? open : '');
+  if (wrappedOpen && after.startsWith(close) && !(close === '*' && after.startsWith('**') && !before.endsWith('***'))) {
+    const nb = before.slice(0, before.length - wrappedOpen.length);
+    const na = after.slice(close.length);
+    if (!anyColor || wrappedOpen === open) {
+      fmtApply(input, nb + sel + na, nb.length, nb.length + sel.length);
+      return;
+    }
+    // другой цвет — меняем цвет
+    fmtApply(input, nb + open + sel + close + na, nb.length + open.length, nb.length + open.length + sel.length);
+    return;
+  }
+  // разметка работает внутри абзаца — каждую строку выделения оформляем отдельно
+  const wrapped = sel.split('\n').map(line => (line.trim() ? line.replace(/^(\s*)(.*?)(\s*)$/, `$1${open}$2${close}$3`) : line)).join('\n');
+  fmtApply(input, before + wrapped + after, s, s + wrapped.length);
+}
+
+function fmtClear() {
+  const input = fmtTarget;
+  if (!input) return;
+  const v = input.value;
+  let s = input.selectionStart, e = input.selectionEnd;
+  if (s === e) { s = 0; e = v.length; }
+  // захватываем значки вплотную к выделению, чтобы не остались «осиротевшие»
+  while (s > 0 && /[*={}a-z/]/.test(v[s - 1]) && /(\*|=|\{[a-z/]*\}?)$/.test(v.slice(0, s))) s--;
+  while (e < v.length && /[*={}a-z/]/.test(v[e]) && /^(\*|=|\{?[a-z/]*\})/.test(v.slice(e))) e++;
+  const cleaned = v.slice(s, e).replace(RICH_TOKEN, '');
+  fmtApply(input, v.slice(0, s) + cleaned + v.slice(e), s, s + cleaned.length);
+}
+
 /* ------------------------------------------------------------ оформление */
 
 /* Элементы дизайна, которые можно скрыть (шаблон отмечает их через env.show). */
@@ -7019,7 +7415,7 @@ async function exportVideoSlide(slide, index, onProgress) {
 
 function exportName(slide, i) {
   const def = KINDS[slide.kind];
-  const label = slide.kind === 'highlight' && slide.data.label ? slide.data.label : def.name;
+  const label = slide.kind === 'highlight' && slide.data.label ? stripRich(slide.data.label) : def.name;
   return `${String(i + 1).padStart(2, '0')}-${slug(label)}`;
 }
 
@@ -7151,20 +7547,26 @@ const HELP = `
 <li>По брендбуку оба логотипа в монохроме — галочка «Оба логотипа в монохроме» включена по умолчанию.</li>
 <li>Поле <b>«Флаги — по желанию»</b> есть в каждом шаблоне: до 3 стран, флаги встают в плашку рубрики или в свободный угол.</li>
 </ul>
-<h3>5. Оформление слайда</h3>
+<h3>5. Форматирование текста</h3>
+<ul>
+<li>Поставь курсор в поле — над ним появится панель. Выдели слова и нажми: <b>Акцент</b> (цвет по брендбуку: Lime на тёмном, синий на светлом), <b>Ж</b> — жирный (<kbd>⌘B</kbd>), <b>М</b> — маркер на подложке Lime, <b>Цвет</b> — любой цвет палитры. Повторное нажатие снимает оформление, «Сбросить» убирает всё.</li>
+<li>В поле оформление видно значками: <code>*акцент*</code>, <code>**жирный**</code>, <code>==маркер==</code>, <code>{coral}цвет{/}</code> — их можно писать и руками. На карточке значков нет.</li>
+<li>На Lime и Coral по брендбуку текст только Ink — там акцент становится жирным.</li>
+</ul>
+<h3>6. Оформление слайда</h3>
 <ul>
 <li>Блок <b>Оформление</b> под полями: фон обложки из палитры брендбука (текст сам становится Ink или белым), логотип edubridge — по макету, скрыть или в угол (<b>«В свободный угол»</b> сам найдёт место, где логотип ничего не накроет).</li>
 <li><b>Расположение текста</b> — сетка 3×3: блок вверх, по центру или вниз, строки по левому краю, по центру или по правому. В макетах, где текст привязан к фото или таблице, — только выравнивание строк.</li>
 <li>Плашку можно скрыть, переписать и перекрасить. Галочками в «Показывать» убираются подзаголовок, счётчик, подписи, декор и кнопки.</li>
 <li>У каждого заголовка есть поле <b>«Подзаголовок — по желанию»</b>. <b>Применить ко всем слайдам</b> переносит оформление на весь материал.</li>
 </ul>
-<h3>6. Если текст не влезает</h3>
+<h3>7. Если текст не влезает</h3>
 <ul>
 <li>Под превью появится предупреждение: «больше 3 строк», «не помещается», «мало пикселей».</li>
 <li>В блоке <b>Подстройка текста</b> можно уменьшить кегль и интерлиньяж, кнопка <b>Уместить</b> сделает это сама.</li>
 <li>Кнопка с сеткой в верхней панели показывает поля, колонки и безопасные зоны: обрезку 3:4 в профиле, зоны интерфейса Stories, зону обложки Reels.</li>
 </ul>
-<h3>7. Экспорт</h3>
+<h3>8. Экспорт</h3>
 <ul>
 <li><b>Экспорт</b> справа сверху: PNG или JPG, 1× или 2×, все слайды одним ZIP, по одному или только текущий. <kbd>⌘S</kbd> — все слайды.</li>
 <li>Титры для Reels и плашка спикера без фона выгружаются в PNG с прозрачностью — для монтажа.</li>
@@ -7190,6 +7592,16 @@ function openHelp() {
 
 function collectElements() {
   for (const node of document.querySelectorAll('[id]')) el[node.id] = node;
+  buildFmtBar();
+  el.form.addEventListener('focusin', e => { if (fmtEligible(e.target)) showFmtBar(e.target); });
+  el.form.addEventListener('focusout', () => {
+    setTimeout(() => { if (!fmtEligible(document.activeElement)) hideFmtBar(); }, 0);
+  });
+  el.form.addEventListener('keydown', e => {
+    if (!fmtEligible(e.target) || !(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'b' || k === 'и') { e.preventDefault(); fmtTarget = e.target; fmtWrap('**', '**'); }
+  });
 }
 
 function closeTopModal() {
