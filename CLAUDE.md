@@ -118,7 +118,7 @@ Runtime is three classic scripts sharing globals (no modules):
   three partner logos are wide.
 
 Per-slide "Оформление" lives in `slide.look` (`{ bg, logo, pillText,
-pillStyle, hide: [] }`, empty = brandbook layout) and is applied inside
+pillStyle, vpos, align, hide: [] }`, empty = brandbook layout) and is applied inside
 `renderSlide()`, so kinds only need to cooperate:
 
 - covers declare `bg: '<surface>'` and call `env.cover()` first — it fills the
@@ -134,6 +134,13 @@ pillStyle, hide: [] }`, empty = brandbook layout) and is applied inside
 - `env.show(id)` marks an optional element and returns false if it's hidden;
   ids are `sub`, `counter`, `meta`, `decor`, `cta` (`LOOK_ELEMENTS`). The look
   panel renders the slide into a 1×1 canvas to learn which ids a slide uses.
+- `env.place(def)` reads `look.vpos` (t/m/b) and `look.align` (l/c/r) and
+  returns `{ row, col, align, y(top, bottom, h), x(x, width, w), opts(width,
+  extra) }`. `def` is the brandbook placement: two letters (`'ml'`, `'bl'`)
+  enable the 3×3 grid, one letter (`'l'`) only line alignment. Layouts must
+  give the same pixels when nothing is overridden — compare default renders
+  before/after when touching a kind. `layoutBody().draw` takes the same opts;
+  `placedLine()` aligns single lines.
 - kinds with `subtitle: '<title field key>'` get `SUBTITLE_FIELD` inserted
   after that field and a `sub` tune role; they wrap the laid-out title with
   `titled()`, which returns a layoutText-compatible block.

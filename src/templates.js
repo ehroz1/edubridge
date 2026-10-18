@@ -123,6 +123,12 @@ function titled(ctx, env, d, title, width, o = {}) {
   };
 }
 
+/* Строка без переноса, выровненная внутри колонки [x, x+width] по расположению P. */
+function placedLine(ctx, P, text, x, width, y, st, opts) {
+  if (!text) return;
+  drawLine(ctx, text, P.x(x, width, Math.min(width, textWidth(ctx, text, st))), y, st, opts);
+}
+
 /* Счётчик «4/9» справа — только если слайдов больше одного. */
 function counterText(env) {
   return env.total > 1 && env.show('counter') ? `${env.index + 1}/${env.total}` : '';
@@ -174,19 +180,23 @@ function layoutBody(ctx, text, st, width) {
   const tooWide = blocks.some(b => b.lt.tooWide);
   return {
     h, tooWide, lines: blocks.reduce((n, b) => n + Math.max(1, b.lt.lines.length), 0),
-    draw(ctx2, x, y, color, markerColor) {
+    draw(ctx2, x, y, color, markerColor, o = {}) {
       let cy = y;
+      const align = o.align || 'left';
       blocks.forEach((b, i) => {
         if (i > 0 && b.bullet && blocks[i - 1].bullet) cy += itemGap;
         if (b.empty) { cy += st.size * st.lh; return; }
         if (b.bullet) {
           const lineH = st.size * st.lh;
           const ah = arcHeight(markerW);
+          // пункт с дугой выравнивается целиком: маркер + строки
+          const bw = indent + b.lt.maxW;
+          const bx = align === 'center' ? x + (width - bw) / 2 : align === 'right' ? x + width - bw : x;
           // дуга стоит на средней линии первой строки
-          drawArc(ctx2, x, cy + lineH / 2 - ah * 0.62, markerW, markerColor);
-          b.lt.draw(ctx2, x + indent, cy, { color });
+          drawArc(ctx2, bx, cy + lineH / 2 - ah * 0.62, markerW, markerColor);
+          b.lt.draw(ctx2, bx + indent, cy, { color });
         } else {
-          b.lt.draw(ctx2, x, cy, { color });
+          b.lt.draw(ctx2, x, cy, { color, align, width });
         }
         cy += b.lt.h;
       });
@@ -326,9 +336,10 @@ KINDS.newsCover = {
       drawLine(ctx, d.date, 1000 - textWidth(ctx, d.date, st), y + (rowH - 30) / 2, st, { color: th.sub });
     }
     y += rowH ? rowH + 48 : 0;
+    const P = env.place('l');
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 76, 1.1, -0.03)), 920), 920);
     env.lines(title, 3, 'Заголовок');
-    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    title.draw(ctx, 80, y, P.opts(920, { color: th.title, subColor: th.sub }));
     y += title.h + 48;
     const footY = H - 80 - 44;
     const photoH = footY - 48 - y;
@@ -353,20 +364,28 @@ KINDS.storyCover = {
   draw(ctx, d, env) {
     const { W, H } = env;
     env.photo('photo', 0, 0, W, H, { placeholder: HATCH_DARK });
-    fillVGradient(ctx, 0, H - 760, W, 760, [[0, 'rgba(18,20,24,0)'], [1, 'rgba(18,20,24,0.88)']]);
+    const P = env.place('bl');
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.1, -0.03)), 920), 920);
+    env.lines(title, 2, 'Цитата-заголовок');
+    const heroH = d.hero ? 36 + 32 : 0;
+    const logoY = H - 80 - 44;
+    const bottom = env.logoWidth(44) ? logoY - 32 : H - 80;
+    const y = P.y(80 + 64 + 48, bottom, heroH + title.h);
+    // затемнение — там, где текст: снизу (как в макете), сверху или по центру
+    const blockMid = y + (heroH + title.h) / 2;
+    if (P.row === 'b') fillVGradient(ctx, 0, H - 760, W, 760, [[0, 'rgba(18,20,24,0)'], [1, 'rgba(18,20,24,0.88)']]);
+    else if (P.row === 't') fillVGradient(ctx, 0, 0, W, Math.min(H, y + heroH + title.h + 260), [[0, 'rgba(18,20,24,0.88)'], [0.6, 'rgba(18,20,24,0.6)'], [1, 'rgba(18,20,24,0)']]);
+    else fillVGradient(ctx, 0, blockMid - 520, W, 1040, [[0, 'rgba(18,20,24,0)'], [0.5, 'rgba(18,20,24,0.8)'], [1, 'rgba(18,20,24,0)']]);
+    if (P.row !== 'b') fillVGradient(ctx, 0, H - 260, W, 260, [[0, 'rgba(18,20,24,0)'], [1, 'rgba(18,20,24,0.6)']]);
     env.pill(80, 80, 'stories', 'photo', { text: d.pill });
     const counter = counterText(env);
     if (counter) {
       const st = S('onest', 500, 30, 1);
       drawLine(ctx, counter, 1000 - textWidth(ctx, counter, st), 80, st, { color: C.white });
     }
-    const logoY = H - 80 - 44;
     env.logo(80, logoY, 44, 'monoWhite', 'left', 920);
-    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.1, -0.03)), 920), 920);
-    env.lines(title, 2, 'Цитата-заголовок');
-    const titleY = (env.logoWidth(44) ? logoY - 32 : H - 80) - title.h;
-    title.draw(ctx, 80, titleY, { color: C.white });
-    if (d.hero) drawLine(ctx, d.hero, 80, titleY - 32 - 36, S('onest', 600, 36, 1), { color: C.lime });
+    placedLine(ctx, P, d.hero, 80, 920, y, S('onest', 600, 36, 1), { color: C.lime });
+    title.draw(ctx, 80, y + heroH, P.opts(920, { color: C.white }));
   },
 };
 
@@ -396,13 +415,14 @@ KINDS.storyInner = {
       drawLine(ctx, counter, 1000 - textWidth(ctx, counter, st), 80 + 33, st, { color: C.slate });
     }
     let y = 80 + 96 + 40;
+    const P = env.place('l');
     const q = titled(ctx, env, d, layoutText(ctx, d.question, env.t('title', S('onest', 700, 60, 1.12, -0.02)), 920), 920);
     env.lines(q, 4, 'Вопрос');
-    q.draw(ctx, 80, y, { color: C.blue, subColor: C.slate });
+    q.draw(ctx, 80, y, P.opts(920, { color: C.blue, subColor: C.slate }));
     y += q.h + 40;
     const a = layoutText(ctx, d.answer, env.t('body', S('onest', 400, 38, 1.42)), 920);
     env.lines(a, 99, 'Ответ');
-    a.draw(ctx, 80, y, { color: C.ink });
+    a.draw(ctx, 80, y, P.opts(920, { color: C.ink }));
     y += a.h;
     const footY = bottomRow(ctx, env, SURFACES.paper);
     if (!photoBand(env, y + 40, footY - 40)) env.fits(y, footY - 40, 'Ответ не помещается — сократи текст или уменьши кегль');
@@ -439,14 +459,15 @@ KINDS.quote = {
     const q = layoutText(ctx, d.quote, env.t('title', S('unb', 600, 70, 1.15, -0.03)), 920);
     env.lines(q, 5, 'Цитата');
     const top = 80 + 120;
+    const P = env.place('ml');
     if (env.media('photo')) {
-      q.draw(ctx, 80, top, { color: th.title });
+      q.draw(ctx, 80, top, P.opts(920, { color: th.title }));
       photoBand(env, top + q.h + 40, rowY - 40);
       return;
     }
-    const free = rowY - top - q.h;
-    env.minSpace(free, 40, 'Цитата не помещается — сократи её');
-    q.draw(ctx, 80, top + Math.max(0, free) / 2, { color: th.title });
+    const free = rowY - 40 - top - q.h;
+    env.minSpace(free + 40, 40, 'Цитата не помещается — сократи её');
+    q.draw(ctx, 80, P.row === 'm' ? top + Math.max(0, free + 40) / 2 : P.y(top, rowY - 40, q.h), P.opts(920, { color: th.title }));
   },
 };
 
@@ -489,9 +510,10 @@ KINDS.uniCover = {
     let y = 80 + rowH + 40;
     const name = layoutText(ctx, d.name, env.t('title', S('unb', 600, 88, 1.05, -0.03)), 920);
     env.lines(name, 2, 'Название');
-    name.draw(ctx, 80, y, { color: th.title });
+    const P = env.place('l');
+    name.draw(ctx, 80, y, P.opts(920, { color: th.title }));
     y += name.h + 20;
-    drawLine(ctx, d.city, 80, y, S('onest', 500, 36, 1), { color: th.sub });
+    placedLine(ctx, P, d.city, 80, 920, y, S('onest', 500, 36, 1), { color: th.sub });
     y += 36 + 40;
     const footY = H - 80 - 44;
     const gridH = footY - 40 - y;
@@ -543,11 +565,12 @@ KINDS.factsSlide = {
     const { W, H } = env;
     fillRect(ctx, 0, 0, W, H, sf.bg);
     const th = topRow(ctx, env, d, sf);
+    const P = env.place('l');
     let y = 80 + (th ? th + 48 : 0);
     if (d.title) {
       const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 800, 72, 1.1, -0.02)), 920), 920);
       env.lines(title, 3, 'Заголовок');
-      title.draw(ctx, 80, y, { color: sf.title, subColor: sf.sub });
+      title.draw(ctx, 80, y, P.opts(920, { color: sf.title, subColor: sf.sub }));
       y += title.h + 40;
     }
     const vst = env.t('value', S('onest', 700, 44, 1.2));
@@ -586,16 +609,17 @@ KINDS.textSlide = {
     const { W, H } = env;
     fillRect(ctx, 0, 0, W, H, sf.bg);
     const th = topRow(ctx, env, d, sf);
+    const P = env.place('l');
     let y = 80 + (th ? th + 48 : 0);
     if (d.title) {
       const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 800, 72, 1.1, -0.02)), 920), 920);
       env.lines(title, 3, 'Заголовок');
-      title.draw(ctx, 80, y, { color: sf.title, subColor: sf.sub });
+      title.draw(ctx, 80, y, P.opts(920, { color: sf.title, subColor: sf.sub }));
       y += title.h + 40;
     }
     const body = layoutBody(ctx, d.body, env.t('body', S('onest', 400, 38, 1.42)), 920);
     if (body.tooWide) env.warn('Слово в тексте не помещается по ширине');
-    body.draw(ctx, 80, y, sf.text, sf.marker);
+    body.draw(ctx, 80, y, sf.text, sf.marker, P.opts(920));
     y += body.h;
     const footY = bottomRow(ctx, env, sf);
     if (!photoBand(env, y + 40, footY - 40)) env.fits(y, footY - 40, 'Текст не помещается — сократи его или уменьши кегль');
@@ -655,17 +679,18 @@ KINDS.webinar = {
       drawPill(ctx, 1000 - cm.w, rowY + rowH - cm.h, d.cta, Object.assign({ size: 30, weight: 700, padX: 36, padY: 24 }, th.dark ? { bg: C.white, color: C.ink } : { bg: C.ink, color: C.white }));
     }
     let y = rowY - 40;
+    const P = env.place('l');
     const topics = (d.topics || []).map(t => (t.text || '').trim()).filter(Boolean);
     if (topics.length) {
       const body = layoutBody(ctx, topics.map(t => '- ' + t).join('\n'), env.t('body', S('onest', 500, 34, 1.3)), 920);
       y -= body.h;
-      body.draw(ctx, 80, y, th.text, th.dark ? C.lime : th.marker);
+      body.draw(ctx, 80, y, th.text, th.dark ? C.lime : th.marker, P.opts(920));
       y -= 28;
     }
     const topic = titled(ctx, env, d, layoutText(ctx, d.topic, env.t('title', S('onest', 700, 52, 1.15)), 920), 920, { subMax: 34 });
     env.lines(topic, 2, 'Тема');
     y -= topic.h;
-    topic.draw(ctx, 80, y, { color: th.text, subColor: th.sub });
+    topic.draw(ctx, 80, y, P.opts(920, { color: th.text, subColor: th.sub }));
     const areaBottom = y - 40;
     const areaH = areaBottom - top;
     const n = clampCount(d.count);
@@ -742,7 +767,7 @@ KINDS.deadlines = {
     let y = 80 + (pillH ? pillH + 36 : 0);
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 84, 1.05, -0.03)), 920), 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    title.draw(ctx, 80, y, env.place('l').opts(920, { color: th.title, subColor: th.sub }));
     y += title.h + 36;
     const pst = env.t('body', S('onest', 600, 38, 1.2));
     const dst = S('unb', 600, Math.round(44 * pst.size / 38), 1);
@@ -797,10 +822,11 @@ KINDS.guideCover = {
     const top = 80 + pill.h;
     const free = footY - top - blockH;
     env.minSpace(free, 40, 'Заголовок не помещается — сократи его');
-    let y = hasPhoto ? top + 48 : top + Math.max(0, free) / 2;
-    if (arcW) drawArc(ctx, 80, y, arcW, th.dark ? C.lime : th.accent === C.ink ? C.ink : C.blue);
+    const P = env.place('ml');
+    let y = hasPhoto ? top + 48 : P.y(top + 48, footY - 48, blockH);
+    if (arcW) drawArc(ctx, P.x(80, 920, arcW), y, arcW, th.dark ? C.lime : th.accent === C.ink ? C.ink : C.blue);
     y += arcH;
-    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    title.draw(ctx, 80, y, P.opts(920, { color: th.title, subColor: th.sub }));
     if (hasPhoto) photoBand(env, y + title.h + 48, footY - 48);
   },
 };
@@ -830,10 +856,11 @@ KINDS.guideStep = {
     let y = 80 + 240 + 48;
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 700, 72, 1.1, -0.02)), 920), 920);
     env.lines(title, 3, 'Действие');
-    title.draw(ctx, 80, y, { color: C.ink, subColor: C.slate });
+    const P = env.place('l');
+    title.draw(ctx, 80, y, P.opts(920, { color: C.ink, subColor: C.slate }));
     y += title.h + 48;
     const body = layoutBody(ctx, d.body, env.t('body', S('onest', 400, 40, 1.42)), 920);
-    body.draw(ctx, 80, y, C.graphite, C.blue);
+    body.draw(ctx, 80, y, C.graphite, C.blue, P.opts(920));
     y += body.h;
     const barY = H - 80 - 10;
     if (env.total > 1 && env.show('counter')) drawProgress(ctx, 80, barY, 920, env.total, env.index + 1, { h: 10, gap: 10 });
@@ -868,7 +895,7 @@ KINDS.guideMistakes = {
     let y = 80;
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 88, 1.05, -0.03)), fw ? 920 - fw - 24 : 920), fw ? 920 - fw - 24 : 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.coral, subColor: C.mistDark });
+    title.draw(ctx, 80, y, env.place('l').opts(fw ? 920 - fw - 24 : 920, { color: C.coral, subColor: C.mistDark }));
     y += title.h + 48;
     const st = env.t('body', S('onest', 500, 44, 1.3));
     const markW = textWidth(ctx, '× ', st);
@@ -914,7 +941,7 @@ KINDS.guideChecklist = {
     let y = 80;
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 88, 1.05, -0.03)), fw ? 920 - fw - 24 : 920), fw ? 920 - fw - 24 : 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: C.blue, subColor: C.slate });
+    title.draw(ctx, 80, y, env.place('l').opts(fw ? 920 - fw - 24 : 920, { color: C.blue, subColor: C.slate }));
     y += title.h + 44;
     const st = env.t('body', S('onest', 500, 44, 1.3));
     (d.items || []).forEach((it, i) => {
@@ -969,7 +996,8 @@ KINDS.guideFinal = {
     const top = 80 + (deco ? arcHeight(360) : fw ? 72 : 0);
     const free = rowY - top - title.h;
     env.minSpace(free, 40, 'Призыв не помещается — сократи его');
-    title.draw(ctx, 80, top + Math.max(0, free) / 2, { color: th.title, subColor: th.sub });
+    const P = env.place('ml');
+    title.draw(ctx, 80, P.y(top, rowY, title.h), P.opts(920, { color: th.title, subColor: th.sub }));
   },
 };
 
@@ -1003,10 +1031,11 @@ KINDS.number = {
     const top = 80 + pill.h;
     const free = footY - top - blockH;
     env.minSpace(free, 40, 'Текст не помещается');
-    let y = top + Math.max(0, free) / 2;
-    num.draw(ctx, 80, y, { color: th.dark ? C.white : th.accent });
+    const P = env.place('ml');
+    let y = P.y(top, footY, blockH);
+    num.draw(ctx, 80, y, P.opts(920, { color: th.dark ? C.white : th.accent }));
     y += num.h + 36;
-    txt.draw(ctx, 80, y, { color: th.text });
+    txt.draw(ctx, 80, y, P.opts(920, { color: th.text }));
   },
 };
 
@@ -1043,7 +1072,7 @@ KINDS.compare = {
     let y = 80;
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.08, -0.03)), 920), 920);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    title.draw(ctx, 80, y, env.place('l').opts(920, { color: th.title, subColor: th.sub }));
     y += title.h + 40;
     const colW = (920 - 40) / 2;
     const xs = [80, 80 + colW + 40];
@@ -1098,7 +1127,7 @@ KINDS.partnerCover = {
     y += 80 + 40;
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 68, 1.1, -0.03)), 920), 920);
     env.lines(title, 4, 'Заголовок');
-    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    title.draw(ctx, 80, y, env.place('l').opts(920, { color: th.title, subColor: th.sub }));
     y += title.h + 40;
     const photoH = H - 80 - y;
     env.minSpace(photoH, 200, 'Для фото почти не осталось места — сократи заголовок');
@@ -1149,29 +1178,31 @@ KINDS.resCover = {
       if (lw + 40 + tw > 920) env.warn('Подпись внизу наезжает на логотипы — сократи её');
       drawLine(ctx, d.swipe, 1000 - tw, footY + 6, st, { color: th.text });
     }
-    let y = 80 + (pill.h ? pill.h + 64 : 0);
-    if (d.number) {
-      const nst = fitSize(ctx, d.number, env.t('number', S('unb', 600, 300, 0.9, -0.05)), 920, 140);
-      const num = layoutText(ctx, d.number, nst, 920);
-      num.draw(ctx, 80, y, { color: th.accent });
-      y += num.h + 24;
-    }
+    const top = 80 + (pill.h ? pill.h + 64 : 0);
+    const P = env.place('tl');
+    const num = d.number ? layoutText(ctx, d.number, fitSize(ctx, d.number, env.t('number', S('unb', 600, 300, 0.9, -0.05)), 920, 140), 920) : null;
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 72, 1.08, -0.03)), 920), 920);
     env.lines(title, 4, 'Заголовок');
-    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
-    y += title.h;
+    const blockH = (num ? num.h + 24 : 0) + title.h;
+    // категории — в две колонки внизу, до двух строк на название
     const cats = d.showCats === false ? [] : resourceCategories(env).slice(0, 6);
+    const cst = S('onest', 600, 28, 1.15);
+    const laid = cats.map(c => layoutText(ctx, c.title, cst, 470 - 64 - 24));
+    laid.forEach(lt => { if (lt.lines.length > 2) { lt.lines = lt.lines.slice(0, 2); lt.h = 2 * cst.size * cst.lh; } });
+    const rowHs = [];
+    for (let r = 0; r * 2 < cats.length; r++) {
+      rowHs.push(Math.max(48, ...laid.slice(r * 2, r * 2 + 2).map(lt => lt.h)) + 20);
+    }
+    const catsH = rowHs.reduce((a, b) => a + b, 0) - 20;
+    const cy = cats.length ? footY - 56 - catsH : footY;
+    let y = P.y(top, cy - 40, blockH);
+    if (num) {
+      num.draw(ctx, 80, y, P.opts(920, { color: th.accent }));
+      y += num.h + 24;
+    }
+    title.draw(ctx, 80, y, P.opts(920, { color: th.title, subColor: th.sub }));
+    y += title.h;
     if (cats.length) {
-      // категории — в две колонки, до двух строк на название
-      const st = S('onest', 600, 28, 1.15);
-      const laid = cats.map(c => layoutText(ctx, c.title, st, 470 - 64 - 24));
-      laid.forEach(lt => { if (lt.lines.length > 2) { lt.lines = lt.lines.slice(0, 2); lt.h = 2 * st.size * st.lh; } });
-      const rowHs = [];
-      for (let r = 0; r * 2 < cats.length; r++) {
-        rowHs.push(Math.max(48, ...laid.slice(r * 2, r * 2 + 2).map(lt => lt.h)) + 20);
-      }
-      const catsH = rowHs.reduce((a, b) => a + b, 0) - 20;
-      const cy = footY - 56 - catsH;
       env.fits(y + 40, cy, 'Заголовок и категории не помещаются вместе — сократи заголовок или выключи категории');
       let ry = cy;
       rowHs.forEach((rh, r) => {
@@ -1284,7 +1315,8 @@ KINDS.storyAnnounce = {
     const th = env.cover();
     const fw = env.drawFlags(1000, 250, 88, 'right');
     const head = layoutText(ctx, d.head, S('unb', 600, 96, 1.05, -0.03), fw ? 920 - fw - 24 : 920);
-    head.draw(ctx, 80, 250, { color: th.title });
+    const P = env.place('l');
+    head.draw(ctx, 80, 250, P.opts(fw ? 920 - fw - 24 : 920, { color: th.title }));
     const reserve = storyCollab(env, th.logo);
     const showCta = d.cta && env.show('cta');
     const ctaY = H - 340 - reserve - (showCta ? 48 : 0);
@@ -1298,7 +1330,7 @@ KINDS.storyAnnounce = {
     const cy = top + Math.max(0, free) / 2;
     fillRR(ctx, 80, cy, 920, cardH, 40, th.bg === C.white ? C.paper : C.white);
     env.photo('image', 120, cy + 40, 840, 420, { radius: 24, placeholder: HATCH_LIGHT });
-    title.draw(ctx, 120, cy + 40 + 420 + 28, { color: C.ink, subColor: C.slate });
+    title.draw(ctx, 120, cy + 40 + 420 + 28, P.opts(840, { color: C.ink, subColor: C.slate }));
   },
 };
 
@@ -1333,10 +1365,11 @@ KINDS.storyPoll = {
     const photoH = ph ? ph + 56 : 0;
     const total = photoH + rest;
     env.minSpace(avail - total, 0, 'Опрос не помещается в безопасную зону Stories');
-    let y = 250 + Math.max(0, avail - total) / 2;
+    const P = env.place('ml');
+    let y = P.y(250, 250 + avail, total);
     if (photoH) { env.band('photo', 80, y, 920, ph, { radius: 40 }); y += photoH; }
-    if (flagsH) { env.drawFlags(80, y, 88); y += flagsH; }
-    q.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    if (flagsH) { env.drawFlags(P.x(80, 920, flagsRowWidth(env.flags.length, 88)), y, 88); y += flagsH; }
+    q.draw(ctx, 80, y, P.opts(920, { color: th.title, subColor: th.sub }));
     y += q.h + 64;
     opts.forEach((o, i) => {
       // на синем фоне чередуем белый и Sky Tint, иначе — синий и Sky Tint
@@ -1384,11 +1417,12 @@ KINDS.storyQuiz = {
     const photoH = ph ? ph + 56 : 0;
     const total = photoH + rest;
     env.minSpace(avail - total, 0, 'Квиз не помещается в безопасную зону Stories');
-    let y = 250 + Math.max(0, avail - total) / 2;
+    const P = env.place('ml');
+    let y = P.y(250, 250 + avail, total);
     if (photoH) { env.band('photo', 80, y, 920, ph, { radius: 40 }); y += photoH; }
-    env.pill(80, y, 'quiz', th.surface, pillO);
+    env.pill(P.x(80, 920, pm.w), y, 'quiz', th.surface, pillO);
     y += pm.h ? pm.h + 56 : 0;
-    q.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    q.draw(ctx, 80, y, P.opts(920, { color: th.title, subColor: th.sub }));
     y += q.h + 56;
     answers.forEach(a => {
       const h = Math.max(a.h, ast.size) + 80;
@@ -1429,20 +1463,21 @@ KINDS.storyCountdown = {
     const total = parts.reduce((a, b) => a + b, 0) + (parts.length - 1) * 48;
     const avail = H - 250 - 340 - reserve;
     env.minSpace(avail - total, 0, 'Не помещается в безопасную зону Stories');
-    let y = 250 + Math.max(0, avail - total) / 2;
+    const P = env.place('mc');
+    let y = P.y(250, 250 + avail, total);
     if (flagsH) {
       const fw = flagsRowWidth(env.flags.length, 88);
-      env.drawFlags((W - fw) / 2, y, 88);
+      env.drawFlags(P.x(80, 920, fw), y, 88);
       y += 88 + 48;
     }
-    if (label.h) { label.draw(ctx, 80, y, { color: th.text, align: 'center', width: 920 }); y += label.h + 48; }
-    num.draw(ctx, 80, y, { color: th.accent, align: 'center', width: 920 });
+    if (label.h) { label.draw(ctx, 80, y, P.opts(920, { color: th.text })); y += label.h + 48; }
+    num.draw(ctx, 80, y, P.opts(920, { color: th.accent }));
     y += num.h + 48;
     if (d.unit) {
-      drawLine(ctx, d.unit, 80 + (920 - textWidth(ctx, d.unit, unitSt)) / 2, y, unitSt, { color: th.text });
+      placedLine(ctx, P, d.unit, 80, 920, y, unitSt, { color: th.text });
       y += 72 + 48;
     }
-    if (cta) drawPill(ctx, (W - bm.w) / 2, y, cta, btnO);
+    if (cta) drawPill(ctx, P.x(80, 920, bm.w), y, cta, btnO);
   },
 };
 
@@ -1473,10 +1508,14 @@ KINDS.storyArticle = {
     const total = headH + cardH + (cta ? 48 + bm.h : 0);
     const avail = H - 250 - 340 - reserve;
     env.minSpace(avail - total, 0, 'Не помещается в безопасную зону Stories');
-    let y = 250 + Math.max(0, avail - total) / 2;
+    const P = env.place('ml');
+    let y = P.y(250, 250 + avail, total);
     if (headH) {
-      const fw = env.drawFlags(80, y, 56);
-      if (d.head) drawLine(ctx, d.head, 80 + (fw ? fw + 20 : 0), y + 4, headSt, { color: th.dark ? C.white : th.accent === C.ink ? C.ink : C.blue });
+      const fw0 = env.flags.length ? flagsRowWidth(env.flags.length, 56) : 0;
+      const hw = (fw0 ? fw0 + 20 : 0) + (d.head ? Math.min(920, textWidth(ctx, d.head, headSt)) : 0);
+      const hx = P.x(80, 920, hw);
+      const fw = env.drawFlags(hx, y, 56);
+      if (d.head) drawLine(ctx, d.head, hx + (fw ? fw + 20 : 0), y + 4, headSt, { color: th.dark ? C.white : th.accent === C.ink ? C.ink : C.blue });
       y += headH;
     }
     ctx.save();
@@ -1485,9 +1524,10 @@ KINDS.storyArticle = {
     fillRect(ctx, 80, y, 920, cardH, th.bg === C.white ? C.paper : C.white);
     env.photo('image', 80, y, 920, 560, { placeholder: HATCH_LIGHT });
     ctx.restore();
-    title.draw(ctx, 80 + 48, y + 560 + 48, { color: C.ink, subColor: C.slate });
+    title.draw(ctx, 80 + 48, y + 560 + 48, P.opts(920 - 96, { color: C.ink, subColor: C.slate }));
     y += cardH + 48;
-    if (cta) drawPill(ctx, (W - bm.w) / 2, y, cta, btnO);
+    // кнопка по макету — по центру; при выравнивании вправо — справа
+    if (cta) drawPill(ctx, P.col === 'r' ? 1000 - bm.w : (W - bm.w) / 2, y, cta, btnO);
   },
 };
 
@@ -1518,10 +1558,11 @@ KINDS.reelsCover = {
     if (reserve) env.logo(80, 240 + 1440 - 44 - 40, 44, th.logo, 'left', 920);
     const total = (pm.h ? pm.h + 48 : 0) + title.h;
     env.minSpace(1440 - reserve - total, 0, 'Заголовок выходит за зону обложки 1080×1440');
-    let y = 240 + Math.max(0, 1440 - reserve - total) / 2;
-    env.pill(80, y, rubric, th.surface, pillO);
+    const P = env.place('ml');
+    let y = P.y(240 + 40, 240 + 1440 - reserve - 40, total);
+    env.pill(P.x(80, 920, pm.w), y, rubric, th.surface, pillO);
     y += pm.h ? pm.h + 48 : 0;
-    title.draw(ctx, 80, y, { color: th.title, subColor: th.sub });
+    title.draw(ctx, 80, y, P.opts(920, { color: th.title, subColor: th.sub }));
   },
 };
 
@@ -1581,11 +1622,12 @@ KINDS.reelsOutro = {
     const text = d.text && env.show('meta') ? d.text : '';
     const flagsH = env.flags.length ? 88 + 64 : 0;
     const total = (lh ? lh + 64 : 0) + (text ? 48 + 64 : 0) + flagsH;
-    let y = (H - total) / 2;
-    env.logo((W - lw) / 2, y, lh || 1, th.logo);
+    const P = env.place('mc');
+    let y = P.row === 'm' ? (H - total) / 2 : P.y(250, H - 340 + 64, total);
+    env.logo(P.x(80, 920, lw), y, lh || 1, th.logo);
     y += lh ? lh + 64 : 0;
-    if (text) { drawLine(ctx, text, (W - textWidth(ctx, text, st)) / 2, y, st, { color: th.text }); y += 48 + 64; }
-    if (flagsH) env.drawFlags((W - flagsRowWidth(env.flags.length, 88)) / 2, y, 88);
+    if (text) { placedLine(ctx, P, text, 80, 920, y, st, { color: th.text }); y += 48 + 64; }
+    if (flagsH) env.drawFlags(P.x(80, 920, flagsRowWidth(env.flags.length, 88)), y, 88);
   },
 };
 
@@ -1672,10 +1714,13 @@ KINDS.tgCover = {
     const flags = env.flags.length ? env.flags : (d.flag ? [d.flag] : []);
     const pill = env.pill(64, 64, rubric, dark ? (th.bg === C.blue ? 'blue' : 'ink') : 'light',
       Object.assign({ size: 36, padX: 36, padY: 20, borderWidth: 4, dotSize: 20, flagSize: 56, padFlag: 12 }, th.pill, flags.length && !env.flags.length ? { flags } : {}));
-    wideCollab(env, pill.w, pill.h, colW, dark ? (th.bg === C.blue ? 'onBlue' : 'onDark') : 'main');
+    const below = wideCollab(env, pill.w, pill.h, colW, dark ? (th.bg === C.blue ? 'onBlue' : 'onDark') : 'main');
     const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 104, 1.05, -0.03)), colW), colW);
     env.lines(title, 2, 'Заголовок');
-    title.draw(ctx, 64, H - 64 - title.h, { color: th.text, subColor: dark ? 'rgba(255,255,255,0.82)' : C.graphite });
+    const P = env.place('bl');
+    const top = 64 + (pill.h ? pill.h + below + 40 : below);
+    env.minSpace(H - 64 - top - title.h, 0, 'Заголовок не помещается — сократи его');
+    title.draw(ctx, 64, P.y(top, H - 64, title.h), P.opts(colW, { color: th.text, subColor: dark ? 'rgba(255,255,255,0.82)' : C.graphite }));
   },
 };
 
@@ -1712,13 +1757,15 @@ KINDS.ytWebinar = {
     const below = wideCollab(env, pill.w, pill.h, colW, th.logo);
     const sub = d.sub && env.show('sub');
     const subY = H - 64 - 36;
-    if (sub) drawLine(ctx, d.sub, 64, subY, S('onest', 600, 36, 1), { color: th.accent });
+    const P = env.place('ml');
+    if (sub) placedLine(ctx, P, d.sub, 64, colW, subY, S('onest', 600, 36, 1), { color: th.accent });
     const title = layoutText(ctx, d.title, env.t('title', S('unb', 600, n === 1 ? 96 : n === 2 ? 88 : 80, 1.02, -0.03)), colW);
     env.lines(title, 3, 'Заголовок');
     const top = 64 + (pill.h ? pill.h + below : below);
     const free = (sub ? subY : H - 64) - top - title.h;
     env.minSpace(free, 24, 'Заголовок не помещается — 3–5 слов');
-    title.draw(ctx, 64, top + Math.max(0, free) / 2, { color: th.title });
+    const ty = P.row === 'm' ? top + Math.max(0, free) / 2 : P.y(top, sub ? subY - 24 : H - 64, title.h);
+    title.draw(ctx, 64, ty, P.opts(colW, { color: th.title }));
   },
 };
 
@@ -1735,17 +1782,23 @@ KINDS.ytInterview = {
   draw(ctx, d, env) {
     const { W, H } = env;
     env.photo('photo', 0, 0, W, H, { placeholder: ['#8A909C', '#A7ACB6', 4, 32] });
-    fillHGradient(ctx, 0, 0, W, H, [[0, 'rgba(18,20,24,0.9)'], [1, 'rgba(18,20,24,0)']]);
+    const P = env.place('ml');
+    // градиент Ink — с той стороны, где текст; по центру — ровная тонировка
+    if (P.col === 'l') fillHGradient(ctx, 0, 0, W, H, [[0, 'rgba(18,20,24,0.9)'], [1, 'rgba(18,20,24,0)']]);
+    else if (P.col === 'r') fillHGradient(ctx, 0, 0, W, H, [[0, 'rgba(18,20,24,0)'], [1, 'rgba(18,20,24,0.9)']]);
+    else fillRect(ctx, 0, 0, W, H, 'rgba(18,20,24,0.6)');
     const pill = env.pill(64, 64, 'interview', 'photo', { text: d.pill, size: 32, weight: 700, padX: 28, padY: 16 });
     wideCollab(env, pill.w, pill.h, W - 128, 'monoWhite');
     const heroY = H - 64 - 40;
-    if (d.hero) drawLine(ctx, d.hero, 64, heroY, S('onest', 600, 40, 1), { color: C.lime });
+    const colX = P.x(64, W - 128, 820);
+    if (d.hero) placedLine(ctx, P, d.hero, colX, 820, heroY, S('onest', 600, 40, 1), { color: C.lime });
     const route = layoutText(ctx, d.route, env.t('title', S('unb', 600, 140, 0.95, -0.04)), 820);
     env.lines(route, 2, 'Маршрут');
     const top = 64 + pill.h;
     const free = heroY - top - route.h;
     env.minSpace(free, 16, 'Маршрут не помещается — сократи его');
-    route.draw(ctx, 64, top + Math.max(0, free) / 2, { color: C.white });
+    const ry = P.row === 'm' ? top + Math.max(0, free) / 2 : P.y(top + 24, heroY - 24, route.h);
+    route.draw(ctx, colX, ry, P.opts(820, { color: C.white }));
   },
 };
 
@@ -1782,7 +1835,8 @@ KINDS.ytGuide = {
     const below = wideCollab(env, pill.w, pill.h, colW, th.logo);
     const sub = d.sub && env.show('sub');
     const subY = H - 64 - 36;
-    if (sub) drawLine(ctx, d.sub, 64, subY, S('onest', 600, 36, 1), { color: th.sub });
+    const P = env.place('ml');
+    if (sub) placedLine(ctx, P, d.sub, 64, colW, subY, S('onest', 600, 36, 1), { color: th.sub });
     const tst = env.t('title', S('unb', 600, 88, 1.04, -0.03));
     const title = fitTitle(ctx, d.title, tst, colW, 3, Math.round(tst.size * 0.72));
     env.lines(title, 3, 'Заголовок');
@@ -1790,7 +1844,7 @@ KINDS.ytGuide = {
     const bottom = sub ? subY - 24 : H - 64;
     const free = bottom - top - title.h;
     env.minSpace(free, 24, 'Заголовок не помещается — 3–6 слов');
-    title.draw(ctx, 64, top + Math.max(0, free) / 2, { color: th.title, accent: { word: d.accent, color: th.dark ? C.lime : C.blue } });
+    title.draw(ctx, 64, P.y(top, bottom, title.h), P.opts(colW, { color: th.title, accent: { word: d.accent, color: th.dark ? C.lime : C.blue } }));
   },
 };
 
@@ -1818,7 +1872,8 @@ KINDS.ytNumber = {
     const below = wideCollab(env, pill.w, pill.h, colW, th.logo);
     const source = d.source && env.show('meta');
     const srcY = H - 64 - 28;
-    if (source) drawLine(ctx, d.source, 64, srcY, S('onest', 500, 28, 1), { color: th.sub });
+    const P = env.place('ml');
+    if (source) placedLine(ctx, P, d.source, 64, colW, srcY, S('onest', 500, 28, 1), { color: th.sub });
     const nBase = env.t('number', S('unb', 600, 230, 0.9, -0.05));
     const nst = fitSize(ctx, d.number || '', nBase, colW, Math.round(nBase.size * 0.6));
     const num = layoutText(ctx, d.number, nst, colW);
@@ -1830,10 +1885,11 @@ KINDS.ytNumber = {
     const blockH = num.h + 28 + txt.h;
     const free = bottom - top - blockH;
     env.minSpace(free, 24, 'Текст не помещается');
-    let y = top + Math.max(0, free) / 2;
-    num.draw(ctx, 64, y, { color: th.accent });
+    let y = P.y(top, bottom, blockH);
+    num.draw(ctx, 64, y, P.opts(colW, { color: th.accent }));
     y += num.h + 28;
-    txt.draw(ctx, 64, y, { color: th.text });
+    const tw = Math.min(colW, 780);
+    txt.draw(ctx, P.x(64, colW, tw), y, P.opts(tw, { color: th.text }));
   },
 };
 
