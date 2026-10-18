@@ -221,6 +221,13 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   const partners = collabPartners(collab);
   const monoLockup = partners.length > 0 && (!collab || collab.mono !== false);
   const flags = (slide.data.flags || []).filter(c => FLAGS[c]).slice(0, 3);
+  // «Оформление» слайда: фон, логотип, плашка, скрытые элементы
+  const look = slide.look || {};
+  const hidden = new Set(look.hide || []);
+  const elements = new Set();
+  const corner = LOGO_CORNERS.includes(look.logo) || look.logo === 'free' ? look.logo : null;
+  const logoOff = look.logo === 'none';
+  let builtinLogo = false;
   const warnings = [];
   const slots = [];
   const warn = msg => { if (!warnings.includes(msg)) warnings.push(msg); };
@@ -234,7 +241,6 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
     rubric: tpl ? tpl.rubric : null,
     exporting: Boolean(opts.exporting),
     warnings, slots, flags,
-    hasCollab: partners.length > 0,
     media: mediaAt,
     t(role, st) {
       const tn = slide.tune && slide.tune[role];
@@ -272,26 +278,47 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
       fillRect(ctx, 0, 0, fmt.w, fmt.h, rgba(color, alpha));
       return true;
     },
-    /* Логотип edubridge — с партнёрами из «Коллаборации», если они выбраны. */
+    /* Логотип edubridge — с партнёрами из «Коллаборации», если они выбраны.
+       В «Оформлении» его можно скрыть или унести в угол — тогда здесь он не рисуется. */
     logo(x, y, h, variant = 'main', align = 'left', maxW = Infinity) {
-      // не влезает в отведённую ширину — уменьшаем всю раскладку, центр строки сохраняем
-      const w = lockupLayout(h, partners, lockVariant(variant)).w;
-      const k = w > maxW ? Math.max(0.5, maxW / w) : 1;
-      const hh = h * k;
-      return drawLockup(ctx, x, y + (h - hh) * 0.6, hh, lockVariant(variant), partners, align);
+      builtinLogo = true;
+      elements.add('logo');
+      if (logoOff || corner) return 0;
+      return drawLogoAt(x, y, h, variant, align, maxW);
     },
     logoWidth(h, variant = 'main') {
+      builtinLogo = true;
+      if (logoOff || corner) return 0;
       return lockupLayout(h, partners, lockVariant(variant)).w;
     },
     /* Для слайдов, где логотипа по брендбуку нет: раскладка появляется только при коллаборации. */
     collab(x, y, h, variant = 'main', align = 'left', maxW = Infinity) {
-      return partners.length ? env.logo(x, y, h, variant, align, maxW) : 0;
+      if (!partners.length || logoOff || corner) return 0;
+      return drawLogoAt(x, y, h, variant, align, maxW);
     },
+    get hasCollab() { return partners.length > 0 && !logoOff && !corner; },
+    /* Отмечает элемент дизайна, который можно скрыть в «Оформлении»; false — скрыт. */
+    show(id) {
+      elements.add(id);
+      return !hidden.has(id);
+    },
+    /* Тема фона обложки: по макету (def.bg) или выбранная в «Оформлении». Заливает фон. */
+    cover(fallback) {
+      const key = SURFACES[look.bg] && def.bg ? look.bg : (def.bg || fallback || 'paper');
+      const th = SURFACES[key];
+      fillRect(ctx, 0, 0, fmt.w, fmt.h, th.bg);
+      env.bgColor = th.bg;
+      return th;
+    },
+    bgColor: null,
     pill(x, y, rubric, surface, o = {}) {
-      return drawRubric(ctx, x, y, rubric, surface, Object.assign({}, o, { flags: o.noFlags ? [] : flags }));
+      elements.add('pill');
+      if (hidden.has('pill')) return { w: 0, h: 0 };
+      return drawPill(ctx, x, y, pillText(rubric, o), pillOpts(rubric, surface, o));
     },
     pillSize(rubric, surface, o = {}) {
-      return rubricWidth(ctx, rubric, surface, Object.assign({}, o, { flags: o.noFlags ? [] : flags }));
+      if (hidden.has('pill')) return { w: 0, h: 0 };
+      return pillMetrics(ctx, pillText(rubric, o), pillOpts(rubric, surface, o));
     },
     drawFlags(x, y, size, align = 'left', o = {}) {
       if (!flags.length) return 0;
@@ -300,15 +327,118 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
       return w;
     },
   };
+  function drawLogoAt(x, y, h, variant, align, maxW) {
+    // не влезает в отведённую ширину — уменьшаем всю раскладку, центр строки сохраняем
+    const w = lockupLayout(h, partners, lockVariant(variant)).w;
+    const k = w > maxW ? Math.max(0.5, maxW / w) : 1;
+    const hh = h * k;
+    return drawLockup(ctx, x, y + (h - hh) * 0.6, hh, lockVariant(variant), partners, align);
+  }
+  function pillText(rubric, o) {
+    return look.pillText || o.text || (RUBRICS[rubric] ? RUBRICS[rubric].label : '');
+  }
+  function pillOpts(rubric, surface, o) {
+    const dark = env.bgColor ? isDarkColor(env.bgColor) : surface === 'blue' || surface === 'ink';
+    const st = Object.assign({}, rubricPillStyle(rubric, surface), o, pillLookStyle(look.pillStyle, dark) || {},
+      { flags: o.noFlags ? [] : flags.length ? flags : o.flags || [] });
+    // плашка цвета фона пропадёт — тогда Ink на светлом и белая на тёмном
+    if (st.bg && env.bgColor && st.bg.toLowerCase() === env.bgColor.toLowerCase() && !st.border) {
+      Object.assign(st, dark ? { bg: C.white, color: C.ink } : { bg: C.ink, color: C.white });
+    }
+    return st;
+  }
   ctx.save();
   try {
     def.draw(ctx, slide.data, env);
+    if (corner && !drawCornerLogo(ctx, fmt, def.format, corner, partners, lockVariant)) {
+      warn('Логотип в углу может накрывать элементы — выбери «В свободный угол» или другой угол');
+    }
   } catch (err) {
     console.error('ошибка отрисовки слайда', slide.kind, err);
     warn('Ошибка отрисовки: ' + err.message);
   }
   ctx.restore();
-  return { warnings, slots, W: fmt.w, H: fmt.h };
+  if (corner || builtinLogo) elements.add('logo');
+  return { warnings, slots, W: fmt.w, H: fmt.h, elements: [...elements], builtinLogo };
+}
+
+/* ------------------------------------------------- логотип в углу слайда */
+
+const LOGO_CORNERS = ['tl', 'tr', 'bl', 'br'];
+/* Поля и высота логотипа по форматам; у Stories — внутри безопасной зоны (250 сверху, 340 снизу). */
+const CORNER_BOX = {
+  post: { x: 80, top: 80, bottom: 80, h: 44 },
+  story: { x: 80, top: 250, bottom: 340, h: 44 },
+  wide: { x: 64, top: 64, bottom: 64, h: 40 },
+  hd: { x: 96, top: 80, bottom: 80, h: 56 },
+};
+
+/*
+ * Логотип (с партнёрами) в углу. 'free' — сам выбирает угол, где под ним
+ * пусто (порядок предпочтения: ↙ ↘ ↖ ↗). Цвет — по тому, что под логотипом.
+ * Возвращает false, если выбранный угол занят другими элементами.
+ */
+function drawCornerLogo(ctx, fmt, format, corner, partners, lockVariant) {
+  const box = CORNER_BOX[format] || CORNER_BOX.post;
+  const maxW = fmt.w - box.x * 2;
+  const probe = lockupLayout(box.h, partners, lockVariant('main')).w;
+  const k = probe > maxW ? Math.max(0.5, maxW / probe) : 1;
+  const h = box.h * k, w = probe * k;
+  const place = c => ({
+    x: c[1] === 'l' ? box.x : fmt.w - box.x - w,
+    y: c[0] === 't' ? box.top : fmt.h - box.bottom - h,
+  });
+  let pick = corner, stats;
+  if (corner === 'free') {
+    let best = null;
+    for (const c of ['bl', 'br', 'tl', 'tr']) {
+      const p = place(c);
+      const st = backdropStats(ctx, p.x - 16, p.y - 16, w + 32, h + 32);
+      if (!best || st.busy < best.st.busy - 0.005) best = { c, st };
+    }
+    pick = best.c;
+    stats = best.st;
+  } else {
+    const p = place(corner);
+    stats = backdropStats(ctx, p.x - 16, p.y - 16, w + 32, h + 32);
+  }
+  const p = place(pick);
+  drawLockup(ctx, p.x, p.y, h, lockVariant(stats.variant), partners, 'left');
+  return corner === 'free' || stats.busy < 0.03;
+}
+
+/*
+ * Что под прямоугольником (в координатах макета): вариант логотипа по
+ * среднему цвету (светлый → main, синий → onBlue, тёмный → onDark) и доля
+ * «чужих» пикселей, заметно отличающихся от фона, — занят ли угол.
+ */
+function backdropStats(ctx, x, y, w, h) {
+  try {
+    const m = ctx.getTransform();
+    const cw = ctx.canvas.width, ch = ctx.canvas.height;
+    const sx = clamp(Math.floor(m.a * x + m.e), 0, cw - 1), sy = clamp(Math.floor(m.d * y + m.f), 0, ch - 1);
+    const sw = Math.max(1, Math.min(Math.round(m.a * w), cw - sx)), sh = Math.max(1, Math.min(Math.round(m.d * h), ch - sy));
+    const data = ctx.getImageData(sx, sy, sw, sh).data;
+    const step = 4 * Math.max(1, Math.floor(data.length / 4 / 1500));
+    const lums = [];
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < data.length; i += step) {
+      r += data[i]; g += data[i + 1]; b += data[i + 2];
+      lums.push(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+    }
+    const n = lums.length;
+    r /= n; g /= n; b /= n;
+    // фон — самый частый тон (корзины по 16), «чужие» — отличаются больше чем на 40
+    const buckets = new Array(17).fill(0);
+    for (const l of lums) buckets[Math.round(l / 16)]++;
+    const base = buckets.indexOf(Math.max(...buckets)) * 16;
+    const busy = lums.filter(l => Math.abs(l - base) > 40).length / n;
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const variant = lum >= 110 ? 'main' : b > r + 60 && b > g + 40 ? 'onBlue' : 'onDark';
+    return { variant, busy };
+  } catch {
+    return { variant: 'main', busy: 0 };
+  }
 }
 
 /* Поле формы по ключу медиа: «photo» или вложенное «items.0.logo» — поле внутри списка. */
@@ -672,6 +802,7 @@ function normalizeDraft(d) {
       kind: s.kind,
       data: Object.assign(emptyData(s.kind), s.data || {}),
       tune: s.tune || {},
+      look: s.look && typeof s.look === 'object' ? s.look : {},
     })),
   };
 }
@@ -928,7 +1059,7 @@ function duplicateSlide(i) {
   if (d.slides.length >= tpl.max) { say(`В этом шаблоне до ${slideCountText(tpl.max)}`); return; }
   pushUndo();
   const src = d.slides[i];
-  const copy = { id: uid(), kind: src.kind, data: clone(src.data), tune: clone(src.tune || {}) };
+  const copy = { id: uid(), kind: src.kind, data: clone(src.data), tune: clone(src.tune || {}), look: clone(src.look || {}) };
   d.slides.splice(i + 1, 0, copy);
   const media = state.media[src.id];
   if (media) {
@@ -1001,6 +1132,7 @@ function renderStage(opts = {}) {
   const res = paintCanvas(el.stageCanvas, slide, state.current, d.slides, templateOf(d), cssW);
   if (state.guides) drawGuides(res.ctx, slide);
   state.stage = { cssW, k: cssW / res.W, slots: res.slots, warnings: res.warnings, W: res.W, H: res.H };
+  if (res.elements && lookSig(res) !== state.lookSig) buildLook();
   if (opts.canvasOnly) return;
   updateOverlay();
   updateWarnings(res.warnings);
@@ -1270,6 +1402,7 @@ function buildForm() {
     if (f.showIf && !f.showIf(slide.data)) continue;
     el.form.appendChild(fieldNode(slide, f));
   }
+  buildLook();
   buildTune();
 }
 
@@ -1866,6 +1999,181 @@ function doImport() {
   buildForm();
   changed();
   say(`Готово: ${slideCountText(state.draft.slides.length)}. Проверь категории и добавь логотипы приложений, если нужно`);
+}
+
+/* ------------------------------------------------------------ оформление */
+
+/* Элементы дизайна, которые можно скрыть (шаблон отмечает их через env.show). */
+const LOOK_ELEMENTS = [
+  ['sub', 'Подзаголовок'], ['counter', 'Счётчик и прогресс'], ['meta', 'Подписи: дата, источник, ник'],
+  ['decor', 'Декор: дуги и узоры'], ['cta', 'Кнопка']
+];
+const LOGO_CHOICES = [['auto', 'По макету'], ['none', 'Скрыть'], ['free', 'В свободный угол'], ['tl', '↖'], ['tr', '↗'], ['bl', '↙'], ['br', '↘']];
+let lookScratch = null;
+
+/* Какие элементы есть на слайде: рисуем его в холст 1×1 и смотрим, что отметил шаблон. */
+function slideElements(slide) {
+  if (!lookScratch) { lookScratch = document.createElement('canvas'); lookScratch.width = lookScratch.height = 1; }
+  const ctx = lookScratch.getContext('2d', { willReadFrequently: true });
+  const res = renderSlide(ctx, slide, state.current, state.draft.slides, templateOf(state.draft), { media: state.media[slide.id] || {} });
+  return res;
+}
+
+function lookSig(res) { return res.elements.slice().sort().join(',') + (res.builtinLogo ? '+L' : ''); }
+
+function buildLook() {
+  const slide = currentSlide();
+  const def = KINDS[slide.kind];
+  const look = slide.look = slide.look || {};
+  const res = slideElements(slide);
+  state.lookSig = lookSig(res);
+  const has = new Set(res.elements);
+  el.look.innerHTML = '';
+
+  const head = document.createElement('div');
+  head.className = 'tune-head';
+  head.innerHTML = '<h3>Оформление</h3>';
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'btn btn-ghost btn-sm';
+  reset.textContent = 'Как в макете';
+  reset.addEventListener('click', () => { pushUndo(); slide.look = {}; buildLook(); changed(); });
+  head.appendChild(reset);
+  el.look.appendChild(head);
+
+  const set = (key, value) => {
+    pushUndo();
+    if (value === undefined || value === '' || value === 'auto') delete look[key]; else look[key] = value;
+    changed();
+  };
+  const group = (title, hint) => {
+    const g = document.createElement('div');
+    g.className = 'look-group';
+    g.innerHTML = `<span class="flabel">${title}</span>`;
+    el.look.appendChild(g);
+    if (hint) addHint(g, hint);
+    return g;
+  };
+  const segmented = (g, options, current, onPick) => {
+    const row = document.createElement('div');
+    row.className = 'seg look-seg';
+    for (const [value, name] of options) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = name;
+      b.classList.toggle('on', value === current);
+      b.addEventListener('click', () => {
+        row.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+        onPick(value);
+      });
+      row.appendChild(b);
+    }
+    g.insertBefore(row, g.querySelector('.hint'));
+    return row;
+  };
+  const swatchRow = (g, options, current, color, onPick) => {
+    const row = document.createElement('div');
+    row.className = 'swatches';
+    for (const [value, name] of options) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch' + (value === current ? ' on' : '');
+      b.innerHTML = `<i style="${color(value)}"></i>${name}`;
+      b.addEventListener('click', () => {
+        row.querySelectorAll('.swatch').forEach(x => x.classList.toggle('on', x === b));
+        onPick(value);
+      });
+      row.appendChild(b);
+    }
+    g.appendChild(row);
+  };
+
+  // фон — у обложек, по палитре брендбука
+  if (def.bg) {
+    const g = group('Фон');
+    const opts = [['auto', 'По макету'], ...COVER_BG_CHOICES];
+    swatchRow(g, opts, look.bg || 'auto',
+      v => `background:${(SURFACES[v === 'auto' ? def.bg : v]).bg}`,
+      v => set('bg', v));
+  }
+
+  // логотип: по макету, скрыть или в угол
+  {
+    const g = group('Логотип edubridge', res.builtinLogo
+      ? 'Можно перенести логотип (с партнёрами) в угол: «В свободный угол» сам найдёт место, где он ничего не накроет'
+      : 'В этом макете логотипа нет — «В свободный угол» поставит его туда, где пусто, или выбери угол сам');
+    const opts = res.builtinLogo ? LOGO_CHOICES : LOGO_CHOICES.filter(([v]) => v !== 'none');
+    const row = segmented(g, opts, look.logo || 'auto', v => set('logo', v));
+    // слова — первым рядом, стрелки углов — вторым
+    row.classList.add('logo-seg', opts.length === 7 ? 'w3' : 'w2');
+    row.querySelectorAll('button').forEach((b, i) => b.classList.toggle('word', i < opts.length - 4));
+  }
+
+  // плашка рубрики
+  if (has.has('pill')) {
+    const g = group('Плашка');
+    const hiddenPill = (look.hide || []).includes('pill');
+    const tog = document.createElement('label');
+    tog.className = 'check';
+    tog.innerHTML = '<input type="checkbox"> Показывать плашку';
+    const cb = tog.querySelector('input');
+    cb.checked = !hiddenPill;
+    cb.addEventListener('change', () => { toggleHidden(slide, 'pill', !cb.checked); buildLook(); });
+    g.appendChild(tog);
+    if (!hiddenPill) {
+      if (!def.fields.some(f => f.key === 'pill')) {
+        const input = textInput(slide, look.pillText, false, v => { if (v) look.pillText = v; else delete look.pillText; }, `look:${slide.id}:pill`);
+        input.placeholder = 'Текст плашки — как в макете';
+        g.appendChild(input);
+      }
+      swatchRow(g, [['auto', 'По рубрике'], ...PILL_STYLES], look.pillStyle || 'auto', v => {
+        if (v === 'auto') return 'background:linear-gradient(135deg,#0A34F5 50%,#C8F169 50%)';
+        const st = pillLookStyle(v, false);
+        return st.bg ? `background:${st.bg}` : `background:transparent;box-shadow:inset 0 0 0 2px ${st.border}`;
+      }, v => set('pillStyle', v));
+    }
+  }
+
+  // остальные элементы — можно скрыть
+  const avail = LOOK_ELEMENTS.filter(([id]) => has.has(id));
+  if (avail.length) {
+    const g = group('Показывать');
+    const box = document.createElement('div');
+    box.className = 'look-checks';
+    for (const [id, name] of avail) {
+      const tog = document.createElement('label');
+      tog.className = 'check';
+      tog.innerHTML = `<input type="checkbox"> ${name}`;
+      const cb = tog.querySelector('input');
+      cb.checked = !(look.hide || []).includes(id);
+      cb.addEventListener('change', () => toggleHidden(slide, id, !cb.checked));
+      box.appendChild(tog);
+    }
+    g.appendChild(box);
+  }
+
+  if (state.draft.slides.length > 1) {
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.className = 'btn btn-outline btn-sm btn-block';
+    all.textContent = 'Применить ко всем слайдам';
+    all.addEventListener('click', () => {
+      pushUndo();
+      for (const s of state.draft.slides) if (s !== slide) s.look = clone(slide.look || {});
+      changed();
+      say('Оформление применено ко всем слайдам');
+    });
+    el.look.appendChild(all);
+  }
+}
+
+function toggleHidden(slide, id, hide) {
+  pushUndo();
+  const look = slide.look = slide.look || {};
+  const list = new Set(look.hide || []);
+  if (hide) list.add(id); else list.delete(id);
+  if (list.size) look.hide = [...list]; else delete look.hide;
+  changed();
 }
 
 /* ------------------------------------------------------ подстройка кегля */
@@ -2662,13 +2970,19 @@ const HELP = `
 <li>По брендбуку оба логотипа в монохроме — галочка «Оба логотипа в монохроме» включена по умолчанию.</li>
 <li>Поле <b>«Флаги — по желанию»</b> есть в каждом шаблоне: до 3 стран, флаги встают в плашку рубрики или в свободный угол.</li>
 </ul>
-<h3>5. Если текст не влезает</h3>
+<h3>5. Оформление слайда</h3>
+<ul>
+<li>Блок <b>Оформление</b> под полями: фон обложки из палитры брендбука (текст сам становится Ink или белым), логотип edubridge — по макету, скрыть или в угол (<b>«В свободный угол»</b> сам найдёт место, где логотип ничего не накроет).</li>
+<li>Плашку можно скрыть, переписать и перекрасить. Галочками в «Показывать» убираются подзаголовок, счётчик, подписи, декор и кнопки.</li>
+<li>У каждого заголовка есть поле <b>«Подзаголовок — по желанию»</b>. <b>Применить ко всем слайдам</b> переносит оформление на весь материал.</li>
+</ul>
+<h3>6. Если текст не влезает</h3>
 <ul>
 <li>Под превью появится предупреждение: «больше 3 строк», «не помещается», «мало пикселей».</li>
 <li>В блоке <b>Подстройка текста</b> можно уменьшить кегль и интерлиньяж, кнопка <b>Уместить</b> сделает это сама.</li>
 <li>Кнопка с сеткой в верхней панели показывает поля, колонки и безопасные зоны: обрезку 3:4 в профиле, зоны интерфейса Stories, зону обложки Reels.</li>
 </ul>
-<h3>6. Экспорт</h3>
+<h3>7. Экспорт</h3>
 <ul>
 <li><b>Экспорт</b> справа сверху: PNG или JPG, 1× или 2×, все слайды одним ZIP, по одному или только текущий. <kbd>⌘S</kbd> — все слайды.</li>
 <li>Титры для Reels и плашка спикера без фона выгружаются в PNG с прозрачностью — для монтажа.</li>

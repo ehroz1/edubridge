@@ -469,6 +469,26 @@ h1, h2, h3, p { margin: 0; }
 .tune-role { display: flex; flex-direction: column; gap: 6px; }
 .tune-role .rname { font-weight: 600; font-size: 13px; }
 .tune > .hint { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+/* ---- оформление слайда: фон, логотип, плашка, скрытые элементы */
+.look { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 16px; }
+.look[hidden] { display: none; }
+.look-group { display: flex; flex-direction: column; gap: 8px; }
+.look-group .flabel { font-weight: 600; font-size: 13px; }
+.look-group .hint { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.look-seg { flex-wrap: wrap; }
+.look-seg button { flex: 1 1 auto; min-width: 40px; padding: 0 10px; font-size: 14px; }
+.logo-seg { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); border-radius: 20px; }
+.logo-seg button { grid-column: span 3; font-size: 20px; }
+.logo-seg button.word { font-size: 13px; height: auto; min-height: 34px; line-height: 1.15; padding: 4px 8px; }
+.logo-seg.w3 button.word:nth-child(3) { grid-column: 1 / -1; }
+.logo-seg.w3 button.word:nth-child(-n+2) { grid-column: span 6; }
+.logo-seg.w3 button.word { grid-column: span 4; }
+.logo-seg.w2 button.word { grid-column: span 6; }
+.logo-seg.w2 button.word:nth-child(2) { grid-column: span 6; }
+.look-checks { display: flex; flex-direction: column; gap: 6px; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
+.check input { width: 18px; height: 18px; accent-color: var(--blue); flex: none; }
+.look input[type="text"] { width: 100%; }
 .tpl-kinds-label { font-size: 13px; font-weight: 700; margin-bottom: -8px; }
 
 /* ---- текст поста → слайды */

@@ -117,8 +117,31 @@ Runtime is three classic scripts sharing globals (no modules):
   `maxW` to `logo`/`collab` where the lockup shares a row with something:
   three partner logos are wide.
 
+Per-slide "Оформление" lives in `slide.look` (`{ bg, logo, pillText,
+pillStyle, hide: [] }`, empty = brandbook layout) and is applied inside
+`renderSlide()`, so kinds only need to cooperate:
+
+- covers declare `bg: '<surface>'` and call `env.cover()` first — it fills the
+  background (`look.bg` or the default) and returns a `SURFACES` theme
+  (`text`, `sub`, `title`, `accent`, `surface`, `logo`, `hatch`, `dark`…);
+  never hard-code colors in a cover's `draw`.
+- `env.pill()` applies hide/text/color overrides (`PILL_STYLES`,
+  `pillLookStyle()`) and fixes a pill that matches the background.
+- `env.logo()` / `env.collab()` draw nothing when `look.logo` is `none` or a
+  corner; `drawCornerLogo()` then draws the lockup after `draw`, picking the
+  variant from the pixels under it (`backdropStats()`); `free` picks the least
+  busy corner, a busy explicit corner adds a warning.
+- `env.show(id)` marks an optional element and returns false if it's hidden;
+  ids are `sub`, `counter`, `meta`, `decor`, `cta` (`LOOK_ELEMENTS`). The look
+  panel renders the slide into a 1×1 canvas to learn which ids a slide uses.
+- kinds with `subtitle: '<title field key>'` get `SUBTITLE_FIELD` inserted
+  after that field and a `sub` tune role; they wrap the laid-out title with
+  `titled()`, which returns a layoutText-compatible block.
+
+`MAX_SLIDES` (20) is every template's `max`.
+
 State: `state.draft` is `{ id, templateId, name, mode, collab: { ids, mono },
-slides: [{ id, kind, data, tune }] }` and is autosaved to `localStorage`
+slides: [{ id, kind, data, tune, look }] }` and is autosaved to `localStorage`
 (`edubridge.drafts.v1`, max 40 drafts). `collab.ids` (max 3) point to
 `lib:*` library logos or `up:*` user uploads, which live in
 `edubridge.logos.v1` as data URLs (rasters are downscaled on upload). With
