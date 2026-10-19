@@ -301,6 +301,7 @@ h1, h2, h3, p { margin: 0; }
   box-shadow: 0 12px 40px rgba(18, 20, 24, 0.14);
 }
 .export-pop .label { font-weight: 700; font-size: 13px; }
+.export-actions { display: flex; flex-direction: column; gap: 10px; }
 .progress { height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; }
 .progress div { height: 100%; width: 0; background: var(--blue); transition: width .2s; }
 

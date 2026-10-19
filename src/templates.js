@@ -1992,6 +1992,462 @@ KINDS.ytLowerThird = {
   },
 };
 
+/* ============================================================ ПРЕЗЕНТАЦИЯ */
+/*
+ * Шаблон для спикеров (раздел 09): 16:9, 1920×1080. Unbounded — обложка и
+ * цифры, Onest — текст. Заголовок 60 pt (≈120 px), текст от 28 pt (≈56 px),
+ * до 25 слов на слайд. Логотип справа сверху, дуга в левом нижнем углу.
+ */
+const DM = 120;            // поля слайда
+const DECK_LOGO = 56;      // высота логотипа
+
+/* Логотип справа сверху и номер слайда справа снизу. Возвращает ширину логотипа. */
+function deckFrame(ctx, env, th, maxW = 760) {
+  const lw = env.logo(env.W - DM, DM, DECK_LOGO, th.logo, 'right', maxW);
+  if (env.total > 1 && env.show('counter')) {
+    const st = S('onest', 500, 32, 1);
+    const t = String(env.index + 1);
+    drawLine(ctx, t, env.W - DM - textWidth(ctx, t, st), env.H - DM - 32, st, { color: th.sub });
+  }
+  return lw;
+}
+
+/* Дуга в левом нижнем углу — на тёмном белая (или Lime на Ink), на светлом синяя. Возвращает высоту. */
+function deckArc(ctx, env, th, w = 360) {
+  if (!env.show('decor')) return 0;
+  const color = th.bg === C.blue ? C.white : th.dark ? C.lime : th.accent === C.ink ? C.ink : C.blue;
+  const h = arcHeight(w);
+  drawArc(ctx, DM, env.H - DM - h, w, color);
+  return h;
+}
+
+/* Заголовок слайда (Onest 800) — верхняя строка рядом с логотипом. */
+function deckTitle(ctx, env, d, th, width, max = 2) {
+  const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('onest', 800, 96, 1.08, -0.02)), width), width, { subMax: 48 });
+  env.lines(title, max, 'Заголовок');
+  return title;
+}
+
+KINDS.deckCover = {
+  name: 'Обложка презентации',
+  format: 'hd',
+  bg: 'blue',
+  subtitle: 'title',
+  tune: { title: 'Название' },
+  fields: [
+    { key: 'pill', type: 'text', label: 'Плашка', sample: 'Вебинар' },
+    { key: 'title', type: 'textarea', label: 'Название', hint: 'До 3 строк. Партнёры из «Коллаборации» встанут в лок-ап справа сверху', sample: 'Магистратура в Европе с грантом' },
+    { key: 'speaker', type: 'text', label: 'Спикер', sample: 'Имя Фамилия · Admissions Officer, KU Leuven' },
+    { key: 'date', type: 'text', label: 'Дата и место', sample: '12 ноября · 19:00 по Астане' },
+    optPhoto('Спикер или кампус — в арке справа'),
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    const hasPhoto = Boolean(env.media('photo'));
+    const pw = 600;
+    if (hasPhoto) env.photo('photo', W - DM - pw, DM + DECK_LOGO + 64, pw, H - DM - DECK_LOGO - 64, { shape: 'arch' });
+    const pill = env.pill(DM, DM, env.rubric || 'webinar', th.surface, { text: d.pill || undefined, size: 40, padX: 40, padY: 22, dotSize: 20, gap: 16, flagSize: 60, padFlag: 12 });
+    deckFrame(ctx, env, th, W - 2 * DM - (pill.w ? pill.w + 60 : 0));
+    const arcH = deckArc(ctx, env, th, 360);
+    const colW = W - 2 * DM - (hasPhoto ? pw + 80 : 0);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 112, 1.06, -0.03)), colW), colW, { subMax: 52 });
+    env.lines(title, 3, 'Название');
+    const spSt = S('onest', 600, 44, 1.2), dtSt = S('onest', 500, 36, 1);
+    const speaker = d.speaker ? layoutText(ctx, d.speaker, spSt, colW) : null;
+    const showDate = d.date && env.show('meta');
+    const blockH = title.h + (speaker ? 48 + speaker.h : 0) + (showDate ? 20 + 36 : 0);
+    const top = DM + Math.max(pill.h, DECK_LOGO) + 64;
+    const bottom = H - DM - (arcH ? arcH + 56 : 0);
+    env.minSpace(bottom - top - blockH, 0, 'Название не помещается — сократи его');
+    const P = env.place('ml');
+    let y = P.y(top, bottom, blockH);
+    title.draw(ctx, DM, y, P.opts(colW, { color: th.title, subColor: th.sub }));
+    y += title.h;
+    if (speaker) { y += 48; speaker.draw(ctx, DM, y, P.opts(colW, { color: th.dark ? C.lime : th.accent })); y += speaker.h; }
+    if (showDate) placedLine(ctx, P, d.date, DM, colW, y + 20, dtSt, { color: th.sub });
+  },
+};
+
+KINDS.deckSection = {
+  name: 'Раздел',
+  format: 'hd',
+  bg: 'ink',
+  subtitle: 'title',
+  noFlags: true,
+  tune: { number: 'Номер', title: 'Название' },
+  fields: [
+    { key: 'num', type: 'text', label: 'Номер раздела', hint: 'Пусто — по порядку среди разделов', sample: '' },
+    { key: 'title', type: 'textarea', label: 'Название раздела', hint: 'До 2 строк', sample: 'Как выбрать программу' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    deckFrame(ctx, env, th);
+    const arcH = deckArc(ctx, env, th, 360);
+    const num = String(d.num || String(env.ordinal + 1).padStart(2, '0'));
+    const nst = env.t('number', S('unb', 600, 200, 0.9, -0.04));
+    const n = layoutText(ctx, num, nst, W - 2 * DM);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 104, 1.06, -0.03)), W - 2 * DM), W - 2 * DM, { subMax: 48 });
+    env.lines(title, 2, 'Название раздела');
+    const blockH = n.h + 32 + title.h;
+    const top = DM + DECK_LOGO + 32, bottom = H - DM - (arcH ? arcH + 40 : 0);
+    env.minSpace(bottom - top - blockH, 0, 'Название не помещается — сократи его');
+    const P = env.place('ml');
+    const y = P.y(top, bottom, blockH);
+    n.draw(ctx, DM, y, P.opts(W - 2 * DM, { color: th.accent }));
+    title.draw(ctx, DM, y + n.h + 32, P.opts(W - 2 * DM, { color: th.title, subColor: th.sub }));
+  },
+};
+
+KINDS.deckText = {
+  name: 'Текст',
+  format: 'hd',
+  bg: 'white',
+  subtitle: 'title',
+  noFlags: true,
+  tune: { title: 'Заголовок', body: 'Текст' },
+  fields: [
+    { key: 'title', type: 'textarea', label: 'Заголовок слайда', sample: 'Что нужно для поступления' },
+    { key: 'body', type: 'textarea', label: 'Текст', hint: 'До 25 слов. Строка с «- » — пункт с дугой-маркером', sample: '- Диплом бакалавра по профилю программы\n- IELTS от 6.5 или TOEFL iBT от 90\n- Мотивационное письмо и две рекомендации' },
+    optPhoto('Встанет справа, на высоту текста'),
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    const lw = deckFrame(ctx, env, th);
+    const hasPhoto = Boolean(env.media('photo'));
+    const pw = 680;
+    const colW = W - 2 * DM - (hasPhoto ? pw + 80 : 0);
+    const P = env.place('l');
+    const title = deckTitle(ctx, env, d, th, Math.min(colW, W - 2 * DM - (lw ? lw + 60 : 0)));
+    title.draw(ctx, DM, DM, P.opts(Math.min(colW, W - 2 * DM - (lw ? lw + 60 : 0)), { color: th.title, subColor: th.sub }));
+    const top = DM + Math.max(title.h, DECK_LOGO) + 64;
+    const body = layoutBody(ctx, d.body, env.t('body', S('onest', 400, 56, 1.35)), colW);
+    if (body.tooWide) env.warn('Слово в тексте не помещается по ширине');
+    body.draw(ctx, DM, top, th.text, th.marker, P.opts(colW));
+    env.fits(top + body.h, H - DM, 'Текст не помещается — по брендбуку до 25 слов на слайд');
+    if (hasPhoto) env.photo('photo', W - DM - pw, top, pw, H - DM - top, { radius: 40 });
+  },
+};
+
+KINDS.deckNumber = {
+  name: 'Цифра',
+  format: 'hd',
+  bg: 'blue',
+  noFlags: true,
+  tune: { number: 'Число', title: 'Пояснение' },
+  fields: [
+    { key: 'number', type: 'text', label: 'Число', hint: 'Коротко: «1 из 4», «42%», «€0»', sample: '1 из 4' },
+    { key: 'text', type: 'textarea', label: 'Пояснение', hint: 'До 2 строк', sample: 'студентов Erasmus+ впервые живут за границей' },
+    { key: 'source', type: 'text', label: 'Источник', hint: 'Обязателен под каждой цифрой', sample: 'Источник: Erasmus+ Annual Report' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    deckFrame(ctx, env, th);
+    const colW = W - 2 * DM;
+    const nBase = env.t('number', S('unb', 600, 360, 0.9, -0.05));
+    const num = layoutText(ctx, d.number, fitSize(ctx, d.number || '', nBase, colW, Math.round(nBase.size * 0.55)), colW);
+    if (num.lines.length > 1) env.warn('Число не помещается в одну строку — сократи его');
+    const txt = layoutText(ctx, d.text, env.t('title', S('onest', 600, 64, 1.2)), 1300);
+    env.lines(txt, 2, 'Пояснение');
+    const source = d.source && env.show('meta');
+    const srcY = H - DM - 32;
+    const P = env.place('ml');
+    if (source) placedLine(ctx, P, d.source, DM, colW, srcY, S('onest', 500, 32, 1), { color: th.sub });
+    const blockH = num.h + 40 + txt.h;
+    const top = DM + DECK_LOGO + 40, bottom = source ? srcY - 48 : H - DM;
+    env.minSpace(bottom - top - blockH, 0, 'Текст не помещается');
+    let y = P.y(top, bottom, blockH);
+    num.draw(ctx, DM, y, P.opts(colW, { color: th.accent }));
+    y += num.h + 40;
+    txt.draw(ctx, P.x(DM, colW, Math.min(colW, 1300)), y, P.opts(Math.min(colW, 1300), { color: th.text }));
+  },
+};
+
+KINDS.deckPhoto = {
+  name: 'Фото',
+  format: 'hd',
+  subtitle: 'title',
+  noFlags: true,
+  tune: { title: 'Подпись' },
+  fields: [
+    { key: 'photo', type: 'media', label: 'Фото', video: true, hint: 'На весь слайд; подпись — на затемнении' },
+    { key: 'title', type: 'textarea', label: 'Подпись', hint: 'До 2 строк, можно оставить пустой', sample: 'Кампус KU Leuven, Лёвен' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    env.photo('photo', 0, 0, W, H, { placeholder: HATCH_DARK });
+    const P = env.place('bl');
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 80, 1.08, -0.03)), W - 2 * DM), W - 2 * DM, { subMax: 44 });
+    env.lines(title, 2, 'Подпись');
+    const top = DM + DECK_LOGO + 48, bottom = H - DM;
+    const y = P.y(top, bottom, title.h);
+    if (title.h) {
+      // затемнение там, где подпись
+      if (P.row === 'b') fillVGradient(ctx, 0, H - 560, W, 560, [[0, 'rgba(18,20,24,0)'], [1, 'rgba(18,20,24,0.85)']]);
+      else if (P.row === 't') fillVGradient(ctx, 0, 0, W, y + title.h + 260, [[0, 'rgba(18,20,24,0.85)'], [1, 'rgba(18,20,24,0)']]);
+      else fillVGradient(ctx, 0, y - 260, W, title.h + 520, [[0, 'rgba(18,20,24,0)'], [0.5, 'rgba(18,20,24,0.75)'], [1, 'rgba(18,20,24,0)']]);
+    }
+    fillVGradient(ctx, 0, 0, W, 320, [[0, 'rgba(18,20,24,0.45)'], [1, 'rgba(18,20,24,0)']]);
+    deckFrame(ctx, env, { logo: 'monoWhite', sub: C.white });
+    title.draw(ctx, DM, y, P.opts(W - 2 * DM, { color: C.white }));
+  },
+};
+
+KINDS.deckColumns = {
+  name: 'Две колонки',
+  format: 'hd',
+  bg: 'white',
+  subtitle: 'title',
+  noFlags: true,
+  tune: { title: 'Заголовок', name: 'Заголовки колонок', body: 'Текст' },
+  fields: [
+    { key: 'title', type: 'textarea', label: 'Заголовок слайда', sample: 'Бакалавриат или магистратура' },
+    { key: 'headA', type: 'text', label: 'Слева · заголовок', sample: 'Бакалавриат' },
+    { key: 'bodyA', type: 'textarea', label: 'Слева · текст', hint: 'Строка с «- » — пункт с дугой-маркером', sample: '- 3–4 года\n- Аттестат и SAT\n- Гранты реже' },
+    { key: 'headB', type: 'text', label: 'Справа · заголовок', sample: 'Магистратура' },
+    { key: 'bodyB', type: 'textarea', label: 'Справа · текст', sample: '- 1–2 года\n- Диплом и IELTS\n- Много стипендий' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    const lw = deckFrame(ctx, env, th);
+    const P = env.place('l');
+    const tw = W - 2 * DM - (lw ? lw + 60 : 0);
+    const title = deckTitle(ctx, env, d, th, tw);
+    title.draw(ctx, DM, DM, P.opts(tw, { color: th.title, subColor: th.sub }));
+    const top = DM + Math.max(title.h, DECK_LOGO) + 72;
+    const gap = 120;
+    const cw = (W - 2 * DM - gap) / 2;
+    const hst = env.t('name', S('onest', 700, 60, 1.15));
+    const bst = env.t('body', S('onest', 400, 48, 1.35));
+    let bottom = top;
+    [['headA', 'bodyA'], ['headB', 'bodyB']].forEach(([hk, bk], i) => {
+      const x = DM + i * (cw + gap);
+      let y = top;
+      if (d[hk]) {
+        const h = layoutText(ctx, d[hk], hst, cw);
+        h.draw(ctx, x, y, P.opts(cw, { color: th.dark ? C.lime : th.accent === C.ink ? C.ink : C.blue }));
+        y += h.h + 28;
+      }
+      const b = layoutBody(ctx, d[bk], bst, cw);
+      if (b.tooWide) env.warn('Слово в колонке не помещается по ширине');
+      b.draw(ctx, x, y, th.text, th.marker, P.opts(cw));
+      bottom = Math.max(bottom, y + b.h);
+    });
+    if (env.show('decor')) fillRect(ctx, DM + cw + gap / 2 - 1, top, 3, Math.max(0, bottom - top), th.thin);
+    env.fits(bottom, H - DM, 'Колонки не помещаются — сократи текст');
+  },
+};
+
+KINDS.deckList = {
+  name: 'Список / план',
+  format: 'hd',
+  bg: 'paper',
+  subtitle: 'title',
+  noFlags: true,
+  tune: { title: 'Заголовок', body: 'Пункты' },
+  fields: [
+    { key: 'title', type: 'textarea', label: 'Заголовок слайда', sample: 'План вебинара' },
+    {
+      key: 'items', type: 'list', label: 'Пункты', min: 1, max: 6, hint: 'До 6 пунктов — номера ставятся сами',
+      item: [{ key: 'text', type: 'text', label: 'Пункт' }],
+      sample: [{ text: 'Как выбрать страну и программу' }, { text: 'Гранты и стипендии: где искать' }, { text: 'Документы и сроки' }, { text: 'Ответы на вопросы' }],
+    },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    const lw = deckFrame(ctx, env, th);
+    const P = env.place('l');
+    const tw = W - 2 * DM - (lw ? lw + 60 : 0);
+    const title = deckTitle(ctx, env, d, th, tw);
+    title.draw(ctx, DM, DM, P.opts(tw, { color: th.title, subColor: th.sub }));
+    let y = DM + Math.max(title.h, DECK_LOGO) + 64;
+    const st = env.t('body', S('onest', 600, 52, 1.25));
+    const items = (d.items || []).filter(it => (it.text || '').trim());
+    const two = items.length > 4;
+    const cw = two ? (W - 2 * DM - 80) / 2 : W - 2 * DM;
+    const badge = 88;
+    const rows = two ? Math.ceil(items.length / 2) : items.length;
+    const colY = [y, y];
+    items.forEach((it, i) => {
+      const col = two ? Math.floor(i / rows) : 0;
+      const x = DM + col * (cw + 80);
+      const lt = layoutText(ctx, it.text, st, cw - badge - 32);
+      const rowH = Math.max(badge, lt.h);
+      const by = colY[col] + (rowH - badge) / 2;
+      // номер — в мини-арке, как шаги гайда
+      fillRR(ctx, x, by, badge, badge, [badge / 2, badge / 2, 0, 0], th.bg === C.blue ? C.white : th.dark ? C.lime : C.blue);
+      const ns = String(i + 1);
+      const nst = S('unb', 600, 44, 1);
+      drawLine(ctx, ns, x + (badge - textWidth(ctx, ns, nst)) / 2, by + badge - 18 - 44, nst, { color: th.bg === C.blue ? C.blue : th.dark ? C.ink : C.white });
+      lt.draw(ctx, x + badge + 32, colY[col] + (rowH - lt.h) / 2, { color: th.text });
+      colY[col] += rowH + 36;
+    });
+    env.fits(Math.max(...colY) - 36, H - DM, 'Пункты не помещаются — оставь до 6 коротких');
+  },
+};
+
+KINDS.deckQuote = {
+  name: 'Цитата',
+  format: 'hd',
+  bg: 'sky',
+  noFlags: true,
+  tune: { title: 'Цитата' },
+  fields: [
+    { key: 'quote', type: 'textarea', label: 'Цитата', hint: 'До 4 строк, без кавычек — кавычка уже в макете', sample: 'Поступление — это не лотерея, а проект на полтора года' },
+    { key: 'avatar', type: 'media', label: 'Фото автора' },
+    { key: 'name', type: 'text', label: 'Автор', sample: 'Имя Фамилия' },
+    { key: 'meta', type: 'text', label: 'Должность, вуз', sample: 'Admissions Officer, KU Leuven' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    deckFrame(ctx, env, th);
+    const mark = th.bg === C.blue ? C.white : th.dark ? C.lime : th.accent === C.ink ? C.ink : C.blue;
+    const qSt = S('unb', 600, 260, 0.6);
+    const qh = env.show('decor') ? 140 : 0;
+    if (qh) drawLine(ctx, '«', DM, DM, qSt, { color: mark });
+    const rowY = H - DM - 140;
+    env.photo('avatar', DM, rowY, 140, 140, { shape: 'circle', placeholder: ['#8A909C', '#A7ACB6', 3, 18] });
+    drawLine(ctx, d.name, DM + 140 + 36, rowY + 28, S('onest', 700, 44, 1), { color: th.text });
+    drawLine(ctx, d.meta, DM + 140 + 36, rowY + 28 + 44 + 14, S('onest', 500, 36, 1), { color: th.text });
+    const q = layoutText(ctx, d.quote, env.t('title', S('unb', 600, 84, 1.15, -0.03)), W - 2 * DM);
+    env.lines(q, 4, 'Цитата');
+    const top = DM + (qh || DECK_LOGO) + 48, bottom = rowY - 64;
+    env.minSpace(bottom - top - q.h, 0, 'Цитата не помещается — сократи её');
+    const P = env.place('ml');
+    q.draw(ctx, DM, P.y(top, bottom, q.h), P.opts(W - 2 * DM, { color: th.title }));
+  },
+};
+
+const DECK_SPEAKER_COUNT = { key: 'count', type: 'select', label: 'Сколько спикеров', options: [['2', 'Два'], ['3', 'Три'], ['4', 'Четыре']], sample: '3', rebuild: true };
+function deckSpeakerFields(n, sample) {
+  const showIf = d => Number(d.count || 3) >= n;
+  return [
+    { key: 'photo' + n, type: 'media', label: `Спикер ${n} · фото`, hint: 'Поясной портрет — встанет в арку', showIf },
+    { key: 'name' + n, type: 'text', label: `Спикер ${n} · имя`, sample: sample[0], showIf },
+    { key: 'role' + n, type: 'textarea', label: `Спикер ${n} · должность, вуз`, sample: sample[1], showIf },
+  ];
+}
+
+KINDS.deckSpeakers = {
+  name: 'Спикеры',
+  format: 'hd',
+  bg: 'ink',
+  subtitle: 'title',
+  noFlags: true,
+  tune: { title: 'Заголовок', name: 'Имена' },
+  fields: [
+    { key: 'title', type: 'textarea', label: 'Заголовок слайда', sample: 'Спикеры' },
+    DECK_SPEAKER_COUNT,
+    ...deckSpeakerFields(1, ['Имя Фамилия', 'Admissions Officer, KU Leuven']),
+    ...deckSpeakerFields(2, ['Имя Фамилия', 'Recruitment Manager, McGill']),
+    ...deckSpeakerFields(3, ['Имя Фамилия', 'Выпускница Болашак']),
+    ...deckSpeakerFields(4, ['Имя Фамилия', 'Редактор edubridge']),
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    const lw = deckFrame(ctx, env, th);
+    const P = env.place('l');
+    const tw = W - 2 * DM - (lw ? lw + 60 : 0);
+    const title = deckTitle(ctx, env, d, th, tw);
+    title.draw(ctx, DM, DM, P.opts(tw, { color: th.title, subColor: th.sub }));
+    const n = Math.max(2, Math.min(4, Number(d.count) || 3));
+    const gap = 56;
+    const w = Math.min(400, (W - 2 * DM - gap * (n - 1)) / n);
+    const rowW = n * w + (n - 1) * gap;
+    const x0 = P.x(DM, W - 2 * DM, rowW);
+    const nst = env.t('name', S('onest', 700, 44, 1.15));
+    const rst = S('onest', 400, 32, 1.3);
+    const people = Array.from({ length: n }, (_, i) => ({
+      key: 'photo' + (i + 1),
+      name: layoutText(ctx, d['name' + (i + 1)], nst, w),
+      role: layoutText(ctx, d['role' + (i + 1)], rst, w),
+    }));
+    const textH = Math.max(...people.map(p => p.name.h + (p.role.h ? 12 + p.role.h : 0)));
+    const top = DM + Math.max(title.h, DECK_LOGO) + 64;
+    const archH = Math.min(w * 1.25, H - DM - top - 28 - textH);
+    env.minSpace(archH, w * 0.6, 'Фото спикеров почти не видно — сократи заголовок или подписи');
+    people.forEach((p, i) => {
+      const x = x0 + i * (w + gap);
+      env.photo(p.key, x, top, w, Math.max(0, archH), { shape: 'arch', placeholder: th.dark ? HATCH_INK : HATCH_LIGHT });
+      const ty = top + Math.max(0, archH) + 28;
+      p.name.draw(ctx, x, ty, P.opts(w, { color: th.text }));
+      p.role.draw(ctx, x, ty + p.name.h + 12, P.opts(w, { color: th.sub }));
+    });
+  },
+};
+
+KINDS.deckQuestions = {
+  name: '«Вопросы?»',
+  format: 'hd',
+  bg: 'blue',
+  subtitle: 'title',
+  noFlags: true,
+  tune: { title: 'Надпись' },
+  fields: [
+    { key: 'title', type: 'textarea', label: 'Надпись', sample: 'Вопросы?' },
+    { key: 'contacts', type: 'text', label: 'Контакты', sample: '@edubridge.media · hello@edubridge.media' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    deckFrame(ctx, env, th);
+    const arcH = deckArc(ctx, env, th, 360);
+    const title = titled(ctx, env, d, layoutText(ctx, d.title, env.t('title', S('unb', 600, 200, 1, -0.04)), W - 2 * DM), W - 2 * DM, { subMax: 56 });
+    env.lines(title, 2, 'Надпись');
+    const contacts = d.contacts && env.show('meta');
+    const cst = S('onest', 500, 44, 1);
+    const blockH = title.h + (contacts ? 56 + 44 : 0);
+    const top = DM + DECK_LOGO + 40, bottom = H - DM - (arcH ? arcH + 56 : 0);
+    env.minSpace(bottom - top - blockH, 0, 'Надпись не помещается — сократи её');
+    const P = env.place('ml');
+    const y = P.y(top, bottom, blockH);
+    title.draw(ctx, DM, y, P.opts(W - 2 * DM, { color: th.title, subColor: th.sub }));
+    if (contacts) placedLine(ctx, P, d.contacts, DM, W - 2 * DM, y + title.h + 56, cst, { color: th.dark ? C.lime : th.accent });
+  },
+};
+
+/* --------------------------------------------------------- Фон для Zoom */
+/* Ink или Bridge Blue, логотип справа сверху, дуга слева снизу, центр — для спикера. Не зеркалится. */
+KINDS.zoomBg = {
+  name: 'Фон для Zoom',
+  format: 'hd',
+  bg: 'ink',
+  noFlags: true,
+  tune: { title: 'Название' },
+  fields: [
+    { key: 'title', type: 'textarea', label: 'Название вебинара — по желанию', hint: 'Слева сверху, до 2 строк', sample: 'Магистратура в Европе' },
+    { key: 'name', type: 'text', label: 'Спикер', sample: 'Имя Фамилия' },
+    { key: 'role', type: 'text', label: 'Должность, вуз', sample: 'Admissions Officer, KU Leuven' },
+  ],
+  draw(ctx, d, env) {
+    const { W, H } = env;
+    const th = env.cover();
+    env.logo(W - 96, 80, 64, th.logo, 'right', 760);
+    if (env.show('decor')) {
+      const aw = 520;
+      drawArc(ctx, 96, H - 80 - arcHeight(aw), aw, th.bg === C.blue ? C.white : th.dark ? C.lime : C.blue);
+    }
+    const P = env.place('l');
+    let y = 80;
+    const colW = 760;
+    if (d.title) {
+      const t = layoutText(ctx, d.title, env.t('title', S('onest', 700, 52, 1.15)), colW);
+      env.lines(t, 2, 'Название');
+      t.draw(ctx, 96, y, P.opts(colW, { color: th.text }));
+      y += t.h + 24;
+    }
+    if (d.name) { placedLine(ctx, P, d.name, 96, colW, y, S('onest', 600, 40, 1), { color: th.dark ? C.lime : th.accent }); y += 40 + 14; }
+    if (d.role) placedLine(ctx, P, d.role, 96, colW, y, S('onest', 400, 34, 1), { color: th.sub });
+  },
+};
+
 /* Флаги по желанию — во всех типах слайдов (кроме «Сравнения», где флаги и так главное). */
 const FLAGS_FIELD = { key: 'flags', type: 'flags', label: 'Флаги — по желанию', max: 3, hint: 'До 3 стран: встанут в плашку рубрики или в свободный угол' };
 for (const def of Object.values(KINDS)) {
@@ -2002,6 +2458,13 @@ for (const def of Object.values(KINDS)) {
     def.fields.splice(i + 1, 0, SUBTITLE_FIELD);
     def.tune = Object.assign({}, def.tune, { sub: 'Подзаголовок' });
   }
+}
+
+/* Обложки Telegram и YouTube как слайды презентации: тот же макет 1280×720, растянутый на 1920×1080. */
+const DECK_FROM_WIDE = [['tgCover', 'Слайд в стиле Telegram'], ['ytGuide', 'Слайд в стиле превью гайда'],
+  ['ytNumber', 'Слайд в стиле превью с цифрой'], ['ytVersus', 'Слайд-сравнение'], ['ytWebinar', 'Слайд в стиле превью вебинара']];
+for (const [kind, name] of DECK_FROM_WIDE) {
+  KINDS['deck_' + kind] = Object.assign({}, KINDS[kind], { name, format: 'hd', scaleFrom: 'wide' });
 }
 
 /* ======================================================= подборка: разбор */
@@ -2407,6 +2870,36 @@ const TEMPLATES = [
     allowed: YT_COVERS, max: MAX_SLIDES,
   },
   {
+    id: 'deck', group: 'deck', rubric: 'webinar', name: 'Презентация',
+    desc: 'Шаблон для спикеров 16:9: обложка с ко-брендингом, разделы, текст, цифры, фото, список, колонки, цитата, спикеры и «Вопросы?». Экспорт — PDF или картинки.',
+    rule: 'До 20 слайдов на 40 минут, до 25 слов на слайд. Обложка и финальный слайд — всегда наши',
+    structure: 'Обложка → разделы и тезисы → «Вопросы?»',
+    volume: 'Заголовок 60 pt, текст от 28 pt',
+    slides: [
+      { kind: 'deckCover' },
+      { kind: 'deckList' },
+      { kind: 'deckSection', data: { title: 'Как выбрать программу' } },
+      { kind: 'deckText' },
+      { kind: 'deckNumber' },
+      { kind: 'deckColumns' },
+      { kind: 'deckQuote' },
+      { kind: 'deckSpeakers' },
+      { kind: 'deckQuestions' },
+    ],
+    allowed: ['deckCover', 'deckSection', 'deckText', 'deckNumber', 'deckPhoto', 'deckColumns', 'deckList', 'deckQuote', 'deckSpeakers', 'deckQuestions',
+      ...DECK_FROM_WIDE.map(([k]) => 'deck_' + k)],
+    max: MAX_SLIDES,
+  },
+  {
+    id: 'zoom', group: 'deck', rubric: 'webinar', name: 'Фон для Zoom',
+    desc: 'Ink или Bridge Blue, логотип справа сверху (с партнёрами), дуга слева снизу, центр свободен для спикера.',
+    rule: 'Изображение не зеркалить: участники видят фон правильно',
+    structure: 'Логотип → название вебинара → спикер',
+    volume: '1920×1080',
+    slides: [{ kind: 'zoomBg' }],
+    allowed: ['zoomBg'], max: MAX_SLIDES,
+  },
+  {
     id: 'ytLowerThird', group: 'youtube', rubric: 'webinar', name: 'Плашка спикера',
     desc: 'Титр 1920×1080: белая карточка с синей полосой, имя и должность.',
     rule: 'x 96, y 860, высота 120, появление 0,4 с слева',
@@ -2423,6 +2916,7 @@ const GROUPS = [
   ['reels', 'Reels и хайлайты', 'Instagram · 1080×1920'],
   ['telegram', 'Telegram', '1280×720'],
   ['youtube', 'YouTube', '1280×720 и 1920×1080'],
+  ['deck', 'Презентации', '16:9 · 1920×1080'],
 ];
 
 /* Данные слайда по умолчанию: примеры из полей типа + свои примеры шаблона. */

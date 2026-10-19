@@ -114,9 +114,12 @@ __CSS__
         <button type="button" data-value="2">2×</button>
       </div>
       <p class="muted small" id="exportNote"></p>
-      <button type="button" class="btn btn-primary btn-block" id="btnExportZip">Все слайды · ZIP</button>
-      <button type="button" class="btn btn-outline btn-block" id="btnExportAll">Все слайды по одному</button>
-      <button type="button" class="btn btn-ghost btn-block" id="btnExportOne">Только текущий слайд</button>
+      <div class="export-actions" id="exportActions">
+        <button type="button" class="btn btn-primary btn-block" id="btnExportZip">Все слайды · ZIP</button>
+        <button type="button" class="btn btn-outline btn-block" id="btnExportAll">Все слайды по одному</button>
+        <button type="button" class="btn btn-ghost btn-block" id="btnExportOne">Только текущий слайд</button>
+        <button type="button" class="btn btn-outline btn-block" id="btnExportPdf">Все слайды · PDF</button>
+      </div>
       <div class="progress" id="exportProgress" hidden><div id="exportProgressBar"></div></div>
     </div>
   </header>
