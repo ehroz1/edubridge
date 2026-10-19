@@ -216,6 +216,9 @@ function lineWord(n) { return `${n} ${plural(n, 'строка', 'строки', 
 function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   const def = KINDS[slide.kind];
   const fmt = FORMATS[def.format];
+  // макет другого формата, растянутый на этот (обложки Telegram/YouTube как слайды презентации)
+  const src = def.scaleFrom ? FORMATS[def.scaleFrom] : fmt;
+  const k = fmt.w / src.w;
   const media = opts.media ?? (state.media[slide.id] || {});
   const collab = opts.collab !== undefined ? opts.collab : (state.draft ? state.draft.collab : null);
   const partners = collabPartners(collab);
@@ -239,7 +242,7 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   // при коллаборации по брендбуку оба логотипа в монохроме
   const lockVariant = v => (monoLockup ? ({ main: 'monoInk', onDark: 'monoWhite' }[v] || v) : v);
   const env = {
-    W: fmt.w, H: fmt.h, index, total: slides.length, slides,
+    W: src.w, H: src.h, index, total: slides.length, slides,
     ordinal: slides.slice(0, index).filter(s => s.kind === slide.kind).length,
     rubric: tpl ? tpl.rubric : null,
     exporting: Boolean(opts.exporting),
@@ -265,7 +268,7 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
       if (m && o.fit !== 'contain') {
         const g = mediaGeometry(m, w, h, o.fit);
         const [iw] = mediaSize(m.el);
-        if (g && iw && g.dw / iw > UPSCALE_WARN) warn(`${fieldLabel(key)}: мало пикселей, будет мыльно — нужен файл покрупнее`);
+        if (g && iw && g.dw * k / iw > UPSCALE_WARN) warn(`${fieldLabel(key)}: мало пикселей, будет мыльно — нужен файл покрупнее`);
       }
     },
     /* Фото по желанию: рисуется, только если загружено. */
@@ -277,8 +280,8 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
     /* Фото по желанию на весь кадр под тонировкой цветом фона — текст остаётся читаемым. */
     bgPhoto(key, color, alpha) {
       if (!mediaAt(key)) return false;
-      env.photo(key, 0, 0, fmt.w, fmt.h, {});
-      fillRect(ctx, 0, 0, fmt.w, fmt.h, rgba(color, alpha));
+      env.photo(key, 0, 0, src.w, src.h, {});
+      fillRect(ctx, 0, 0, src.w, src.h, rgba(color, alpha));
       return true;
     },
     /* Логотип edubridge — с партнёрами из «Коллаборации», если они выбраны.
@@ -336,7 +339,7 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
     cover(fallback) {
       const key = SURFACES[look.bg] && def.bg ? look.bg : (def.bg || fallback || 'paper');
       const th = SURFACES[key];
-      fillRect(ctx, 0, 0, fmt.w, fmt.h, th.bg);
+      fillRect(ctx, 0, 0, src.w, src.h, th.bg);
       env.bgColor = th.bg;
       return th;
     },
@@ -381,7 +384,15 @@ function renderSlide(ctx, slide, index, slides, tpl, opts = {}) {
   }
   ctx.save();
   try {
-    def.draw(ctx, slide.data, env);
+    if (k !== 1) {
+      ctx.save();
+      ctx.scale(k, k);
+      def.draw(ctx, slide.data, env);
+      ctx.restore();
+      for (const sl of slots) { sl.x *= k; sl.y *= k; sl.w *= k; sl.h *= k; }
+    } else {
+      def.draw(ctx, slide.data, env);
+    }
     if (corner && !drawCornerLogo(ctx, fmt, def.format, corner, partners, lockVariant)) {
       warn('Логотип в углу может накрывать элементы — выбери «В свободный угол» или другой угол');
     }
@@ -552,6 +563,18 @@ function drawGuides(ctx, slide) {
   } else if (def.format === 'wide') {
     ctx.strokeStyle = 'rgba(10,52,245,0.6)';
     ctx.strokeRect(64, 64, W - 128, H - 128);
+  } else if (slide.kind === 'zoomBg') {
+    // центр — для спикера: контур головы и плеч
+    ctx.strokeStyle = 'rgba(255,90,54,0.8)';
+    ctx.beginPath();
+    ctx.ellipse(W / 2, H * 0.42, 150, 190, 0, 0, Math.PI * 2);
+    ctx.moveTo(W / 2 - 420, H);
+    ctx.bezierCurveTo(W / 2 - 400, H * 0.72, W / 2 - 200, H * 0.66, W / 2, H * 0.66);
+    ctx.bezierCurveTo(W / 2 + 200, H * 0.66, W / 2 + 400, H * 0.72, W / 2 + 420, H);
+    ctx.stroke();
+  } else if (def.format === 'hd' && slide.kind.startsWith('deck') && !def.scaleFrom) {
+    ctx.strokeStyle = 'rgba(10,52,245,0.6)';
+    ctx.strokeRect(120, 120, W - 240, H - 240);
   } else {
     ctx.strokeStyle = 'rgba(10,52,245,0.6)';
     ctx.strokeRect(96, 54, W - 192, H - 108);
@@ -3031,6 +3054,81 @@ async function exportVideoSlide(slide, index, onProgress) {
   }
 }
 
+/*
+ * Простой PDF без библиотек: каждая страница — JPEG-картинка слайда во весь
+ * лист (размер листа — пиксели × 0,75 pt). Для презентаций и каруселей.
+ */
+function buildPdf(pages) {
+  const enc = new TextEncoder();
+  const chunks = [];
+  let length = 0;
+  const offsets = [];
+  const push = part => { const b = typeof part === 'string' ? enc.encode(part) : part; chunks.push(b); length += b.length; };
+  const obj = (n, body) => { offsets[n] = length; push(`${n} 0 obj\n`); body(); push('\nendobj\n'); };
+  push('%PDF-1.4\n%âãÏÓ\n');
+  const n = pages.length;
+  const pageIds = pages.map((_, i) => 3 + i * 3);
+  obj(1, () => push('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2, () => push(`<< /Type /Pages /Kids [${pageIds.map(id => id + ' 0 R').join(' ')}] /Count ${n} >>`));
+  pages.forEach((p, i) => {
+    const id = pageIds[i];
+    const pw = (p.pw).toFixed(2), ph = (p.ph).toFixed(2);
+    obj(id, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 ${id + 2} 0 R >> >> /Contents ${id + 1} 0 R >>`));
+    const content = `q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
+    obj(id + 1, () => push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+    obj(id + 2, () => {
+      push(`<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpeg.length} >>\nstream\n`);
+      push(p.jpeg);
+      push('\nendstream');
+    });
+  });
+  const total = 3 + n * 3;
+  const xref = length;
+  push(`xref\n0 ${total}\n0000000000 65535 f \n`);
+  for (let i = 1; i < total; i++) push(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
+  push(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  const out = new Uint8Array(length);
+  let pos = 0;
+  for (const c of chunks) { out.set(c, pos); pos += c.length; }
+  return out;
+}
+
+/* Все слайды одним PDF; слайды с видео — первым кадром. */
+async function exportPdf() {
+  if (exporting || !state.draft) return;
+  exporting = true;
+  stopAllPreviews();
+  const d = state.draft;
+  el.exportProgress.hidden = false;
+  try {
+    const pages = [];
+    for (let i = 0; i < d.slides.length; i++) {
+      const slide = d.slides[i];
+      const fmt = formatOf(slide);
+      const scale = state.exportScale;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(fmt.w * scale);
+      canvas.height = Math.round(fmt.h * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      fillRect(ctx, 0, 0, fmt.w, fmt.h, '#FFFFFF');
+      renderSlide(ctx, slide, i, d.slides, templateOf(d), { exporting: true });
+      const blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
+      pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), w: canvas.width, h: canvas.height, pw: fmt.w * 0.75, ph: fmt.h * 0.75 });
+      el.exportProgressBar.style.width = Math.round((i + 1) / d.slides.length * 100) + '%';
+    }
+    downloadBlob(new Blob([buildPdf(pages)], { type: 'application/pdf' }), `edubridge-${slug(d.name)}.pdf`);
+    el.exportPop.hidden = true;
+    say(`PDF готов: ${pages.length} ${plural(pages.length, 'страница', 'страницы', 'страниц')}`);
+  } catch (err) {
+    console.error(err);
+    say('Не получилось собрать PDF: ' + err.message);
+  } finally {
+    el.exportProgress.hidden = true;
+    exporting = false;
+  }
+}
+
 function exportName(slide, i) {
   const def = KINDS[slide.kind];
   const label = slide.kind === 'highlight' && slide.data.label ? stripRich(slide.data.label) : def.name;
@@ -3129,6 +3227,12 @@ function syncExportControls() {
   if (state.draft.slides.some(isTransparent)) notes.push('титры без фона — PNG с прозрачностью');
   el.exportNote.textContent = notes.join(' · ');
   el.btnExportZip.hidden = state.draft.slides.length < 2;
+  // PDF — главное для презентаций, для остальных — лишняя кнопка внизу
+  const deck = templateOf(state.draft).group === 'deck';
+  el.btnExportPdf.className = 'btn btn-block ' + (deck ? 'btn-primary' : 'btn-outline');
+  el.btnExportZip.className = 'btn btn-block ' + (deck ? 'btn-outline' : 'btn-primary');
+  el.exportActions.prepend(...(deck ? [el.btnExportPdf] : []));
+  if (!deck) el.exportActions.append(el.btnExportPdf);
   el.btnExportAll.hidden = state.draft.slides.length < 2;
   el.btnExportOne.textContent = state.draft.slides.length < 2 ? 'Скачать' : 'Только текущий слайд';
   el.btnExportOne.className = 'btn btn-block ' + (state.draft.slides.length < 2 ? 'btn-primary' : 'btn-ghost');
@@ -3137,7 +3241,7 @@ function syncExportControls() {
 /* ================================================================== справка */
 
 const HELP = `
-<p>Конструктор собирает посты, Stories, обложки Reels, Telegram и YouTube строго по брендбуку edubridge. Цвета, шрифты и сетка уже на месте — остаётся текст и фото.</p>
+<p>Конструктор собирает посты, Stories, обложки Reels, Telegram и YouTube, презентации и фон для Zoom строго по брендбуку edubridge. Цвета, шрифты и сетка уже на месте — остаётся текст и фото.</p>
 <h3>1. Выбери шаблон</h3>
 <ul>
 <li>На первом экране — все шаблоны с живым превью. Фильтры сверху — по каналам.</li>
@@ -3186,7 +3290,7 @@ const HELP = `
 </ul>
 <h3>8. Экспорт</h3>
 <ul>
-<li><b>Экспорт</b> справа сверху: PNG или JPG, 1× или 2×, все слайды одним ZIP, по одному или только текущий. <kbd>⌘S</kbd> — все слайды.</li>
+<li><b>Экспорт</b> справа сверху: PNG или JPG, 1× или 2×, все слайды одним ZIP, по одному или только текущий, а также <b>все слайды одним PDF</b> — для презентаций. <kbd>⌘S</kbd> — все слайды.</li>
 <li>Титры для Reels и плашка спикера без фона выгружаются в PNG с прозрачностью — для монтажа.</li>
 </ul>
 <h3>Черновики и офлайн</h3>
@@ -3309,6 +3413,7 @@ function wireEvents() {
     syncExportControls();
   });
   el.btnExportZip.addEventListener('click', () => exportSlides('zip'));
+  el.btnExportPdf.addEventListener('click', exportPdf);
   el.btnExportAll.addEventListener('click', () => exportSlides('all'));
   el.btnExportOne.addEventListener('click', () => exportSlides('one'));
 

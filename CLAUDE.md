@@ -6,7 +6,8 @@ Guidance for Claude Code when working in this repository.
 
 A browser-only constructor for edubridge social media materials (Instagram
 posts and carousels, Stories, Reels covers, highlight covers, Telegram
-covers, YouTube thumbnails and a speaker lower third), built strictly to the
+covers, YouTube thumbnails, a speaker lower third, 16:9 speaker
+presentations and a Zoom background), built strictly to the
 edubridge brandbook (`brandbook/Edubridge Brandbook.dc.html`). It is a sibling
 of `ehroz1/card-maker-wemedia` and reuses its single-file architecture, video
 pipeline, ZIP writer and PWA setup, but the editing model is different: every
@@ -147,6 +148,16 @@ pillStyle, vpos, align, hide: [] }`, empty = brandbook layout) and is applied in
   `titled()`, which returns a layoutText-compatible block.
 
 `MAX_SLIDES` (20) is every template's `max`.
+
+Presentations (`group: 'deck'`, 1920×1080): `deck*` kinds share `DM` (120 px
+margins), `deckFrame()` (logo top-right with partners, slide number
+bottom-right) and `deckArc()` (the bottom-left arc). `deck_<kind>` kinds are
+copies of Telegram/YouTube covers with `scaleFrom: 'wide'`: `renderSlide()`
+gives `draw` the source size in `env.W/H`, scales the context by
+`fmt.w / src.w` and scales the hit-test slots back, so a 1280×720 layout
+becomes a 1920×1080 slide untouched. `exportPdf()` renders every slide to
+JPEG and `buildPdf()` writes a minimal PDF (one image per page, page = px ×
+0.75 pt) with no library.
 
 Inline formatting is markup inside field values: `*accent*`, `**bold**`,
 `==marker==`, `{blue|lime|coral|sky|ink|white}color{/}` (paired per
