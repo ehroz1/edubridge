@@ -397,7 +397,7 @@ KINDS.storyInner = {
   tune: { title: 'Вопрос', body: 'Ответ' },
   fields: [
     { key: 'avatar', type: 'media', label: 'Аватар героя', hint: 'Круг 96 px' },
-    { key: 'hero', type: 'text', label: 'Герой · вуз', sample: 'Алия · MIT' },
+    { key: 'hero', type: 'textarea', label: 'Герой · вуз', hint: 'Можно в две строки: Enter переносит строку. Скрыть — в «Оформлении»', sample: 'Алия · MIT' },
     { key: 'question', type: 'textarea', label: 'Вопрос', sample: 'Как ты готовилась к SAT во второй раз?' },
     { key: 'answer', type: 'textarea', label: 'Ответ героя', hint: 'Одна мысль на слайд', sample: 'Я перестала решать всё подряд. Выписала 40 типов задач, где ошибалась, и каждый день разбирала по пять. За три месяца балл вырос на 170.' },
     optPhoto(),
@@ -405,16 +405,22 @@ KINDS.storyInner = {
   draw(ctx, d, env) {
     const { W, H } = env;
     fillRect(ctx, 0, 0, W, H, C.paper);
-    env.photo('avatar', 80, 80, 96, 96, { shape: 'circle', placeholder: [C.mistDark, C.mist, 3, 18] });
-    let hx = 80 + 96 + 24;
-    if (d.hero) hx += drawLine(ctx, d.hero, hx, 80 + 32, S('onest', 600, 32, 1), { color: C.ink }).maxW + 20;
-    env.drawFlags(hx, 80 + 26, 44);
+    // верхняя строка: аватар, герой (можно в несколько строк), флаги, счётчик — аватар и героя можно скрыть
+    const showAv = env.show('avatar');
     const counter = counterText(env);
-    if (counter) {
-      const st = S('onest', 500, 30, 1);
-      drawLine(ctx, counter, 1000 - textWidth(ctx, counter, st), 80 + 33, st, { color: C.slate });
+    const cw = counter ? textWidth(ctx, counter, S('onest', 500, 30, 1)) + 24 : 0;
+    let hero = null;
+    if (d.hero && env.show('hero')) {
+      const multi = String(d.hero).trim().includes('\n');
+      hero = layoutText(ctx, String(d.hero).trim(), S('onest', 600, 32, multi ? 1.25 : 1), 920 - (showAv ? 120 : 0) - cw);
     }
-    let y = 80 + 96 + 40;
+    const rowH = Math.max(showAv ? 96 : 0, hero ? hero.h : 0, env.flags.length ? 44 : 0, counter ? 30 : 0);
+    if (showAv) env.photo('avatar', 80, 80 + (rowH - 96) / 2, 96, 96, { shape: 'circle', placeholder: [C.mistDark, C.mist, 3, 18] });
+    let hx = 80 + (showAv ? 96 + 24 : 0);
+    if (hero) { hero.draw(ctx, hx, 80 + (rowH - hero.h) / 2, { color: C.ink }); hx += hero.maxW + 20; }
+    env.drawFlags(hx, 80 + (rowH - 44) / 2, 44);
+    if (counter) drawLine(ctx, counter, 1000 - textWidth(ctx, counter, S('onest', 500, 30, 1)), 80 + (rowH - 30) / 2, S('onest', 500, 30, 1), { color: C.slate });
+    let y = 80 + (rowH ? rowH + 40 : 0);
     const P = env.place('l');
     const q = titled(ctx, env, d, layoutText(ctx, d.question, env.t('title', S('onest', 700, 60, 1.12, -0.02)), 920), 920);
     env.lines(q, 4, 'Вопрос');
@@ -451,11 +457,15 @@ KINDS.quote = {
     const qx = qw ? 80 + qw + 24 : 80;
     const qfw = env.drawFlags(qx, 80 + 16, 88);
     env.collab(1000, 80 + 38, 44, th.logo, 'right', 1000 - qx - (qfw ? qfw + 40 : 16));
-    const rowY = H - 80 - 120;
-    env.photo('avatar', 80, rowY, 120, 120, { shape: 'circle', placeholder: ['#8A909C', '#A7ACB6', 3, 18] });
-    const tx = 80 + 120 + 28;
-    drawLine(ctx, d.name, tx, rowY + 22, S('onest', 700, 36, 1), { color: th.text });
-    drawLine(ctx, d.meta, tx, rowY + 22 + 36 + 10, S('onest', 500, 30, 1), { color: th.text });
+    const showAv = env.show('avatar');
+    const showHero = (d.name || d.meta) && env.show('hero');
+    const rowY = showAv || showHero ? H - 80 - 120 : H - 80 + 40;
+    if (showAv) env.photo('avatar', 80, rowY, 120, 120, { shape: 'circle', placeholder: ['#8A909C', '#A7ACB6', 3, 18] });
+    const tx = showAv ? 80 + 120 + 28 : 80;
+    if (showHero) {
+      drawLine(ctx, d.name, tx, rowY + 22, S('onest', 700, 36, 1), { color: th.text });
+      drawLine(ctx, d.meta, tx, rowY + 22 + 36 + 10, S('onest', 500, 30, 1), { color: th.text });
+    }
     const q = layoutText(ctx, d.quote, env.t('title', S('unb', 600, 70, 1.15, -0.03)), 920);
     env.lines(q, 5, 'Цитата');
     const top = 80 + 120;
