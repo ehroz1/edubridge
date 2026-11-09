@@ -134,7 +134,7 @@ pillStyle, vpos, align, hide: [] }`, empty = brandbook layout) and is applied in
   variant from the pixels under it (`backdropStats()`); `free` picks the least
   busy corner, a busy explicit corner adds a warning.
 - `env.show(id)` marks an optional element and returns false if it's hidden;
-  ids are `sub`, `counter`, `meta`, `decor`, `cta` (`LOOK_ELEMENTS`). The look
+  ids are `sub`, `counter`, `meta`, `decor`, `cta`, `avatar`, `hero` (`LOOK_ELEMENTS`). The look
   panel renders the slide into a 1×1 canvas to learn which ids a slide uses.
 - `env.place(def)` reads `look.vpos` (t/m/b) and `look.align` (l/c/r) and
   returns `{ row, col, align, y(top, bottom, h), x(x, width, w), opts(width,
