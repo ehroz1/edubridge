@@ -1222,8 +1222,8 @@ function updateOverlay() {
       el.stageOverlay.appendChild(b);
       continue;
     }
-    const focused = state.focusMedia && state.focusMedia.slideId === slide.id && state.focusMedia.key === s.key;
-    if (!focused && !m.isVideo) continue;
+    // заменить и убрать файл — только в панели справа; на превью — лишь управление видео
+    if (!m.isVideo) continue;
     const tools = document.createElement('div');
     tools.className = 'media-tools';
     const bottom = Math.min((s.y + s.h) * st.k, st.H * st.k) - 52;
@@ -1242,8 +1242,6 @@ function updateOverlay() {
       add(m.el.paused ? 'play' : 'pause', '', m.el.paused ? 'Проиграть фрагмент' : 'Пауза', () => togglePlay(slide.id, s.key));
       add('scissors', '', 'Обрезать видео', () => trimMedia(slide.id, s.key));
     }
-    add('image', 'Заменить', 'Заменить файл', () => pickFile(slide.id, s.key));
-    add('x', '', 'Убрать', () => removeMedia(slide.id, s.key));
     el.stageOverlay.appendChild(tools);
   }
 }
